@@ -2,657 +2,1209 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Bassline — Continuous Sustain + Capture Once + Octave Blip (In: Ch1 • Out: Ch4)</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bassline — Chord-Safe Generator (ticks via internal-ticker)</title>
 <style>
-  :root { --bg:#0b0d10; --fg:#e8eef4; --muted:#a9b3bd; --acc:#6ee7ff; --panel:#141922; }
-  html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif; }
-  .wrap { max-width:980px; margin:28px auto; padding:0 16px; }
-  h1 { font-size:18px; margin:0 0 8px; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; }
-  .card { background:var(--panel); border:1px solid #1e2430; border-radius:12px; padding:14px; }
-  .wide { flex:1 1 560px; }
-  .narrow { flex:1 1 320px; }
-  label { display:block; color:var(--muted); font-size:12px; margin-bottom:6px; }
-  select, button { background:#0f131b; border:1px solid #2a3445; color:var(--fg); padding:8px 10px; border-radius:10px; }
-  button { cursor:pointer; }
-  .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#0e1926; border:1px solid #203149; color:#bfe9ff; font-size:12px; }
-  .status { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  pre { margin:0; white-space:pre-wrap; word-break:break-word; }
-  .grid { display:grid; gap:2px; margin-top:8px; }
-  .cell { height:10px; border-radius:2px; background:#232c3a; opacity:.35; }
-  .cell.on { background:var(--acc); opacity:1; }
+  :root{
+    --ui-bg:#ffffff;
+    --ui-fg:#000000;
+    --ui-border:#000000;
+    --ui-radius:10px;
+    --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+    --ui-font-size:14px;
+    --ui-line-height:1.25;
+    --ui-pad-y:10px;
+    --ui-pad-x:12px;
+    --ui-gap:10px;
+    --ui-page-pad:18px;
+    --ui-max-width:100%;
+  }
+
+  html, body{
+    margin:0;
+    height:100%;
+    background:var(--ui-bg);
+    color:var(--ui-fg);
+    font-family:var(--ui-font);
+    font-size:var(--ui-font-size);
+    line-height:var(--ui-line-height);
+  }
+
+  .wrap{
+    max-width:var(--ui-max-width);
+    padding:var(--ui-page-pad);
+    margin:0 auto;
+    display:grid;
+    gap:var(--ui-gap);
+  }
+
+  .row{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:var(--ui-gap);
+    margin:0;
+  }
+
+  label{
+    display:inline-block;
+    color:var(--ui-fg);
+  }
+
+  select, button, input[type="number"]{
+    background:var(--ui-bg);
+    color:var(--ui-fg);
+    border:1px solid var(--ui-border);
+    border-radius:var(--ui-radius);
+    padding:var(--ui-pad-y) var(--ui-pad-x);
+    font:inherit;
+    line-height:inherit;
+    box-shadow:none;
+    appearance:auto;
+  }
+
+  button{ cursor:pointer; user-select:none; }
+  button:disabled, select:disabled{ opacity:.45; cursor:not-allowed; }
+
+  .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
+  .pill{
+    display:inline-block;
+    padding:6px 10px;
+    border-radius:999px;
+    border:1px solid var(--ui-border);
+    font-size:12px;
+  }
+  .small{ font-size:12px; }
+
+  input[type="range"]{
+    accent-color: var(--ui-fg);
+  }
+
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>🎸 Bassline — Continuous Sustain (tiny breaks sometimes) • Capture Once • Octave “Blip” • <span class="mono">Ticker</span> + <span class="mono">MIDI In Ch1</span> → <span class="mono">MIDI Out Ch4</span></h1>
+  <div class="wrap">
+    <div class="row">
+      <label for="midiIn">MIDI In</label>
+      <select id="midiIn" aria-label="MIDI Input"></select>
 
-  <div class="row">
-    <div class="card narrow">
-      <label for="midiIn">MIDI Input (Chord Source, Channel 1)</label>
-      <select id="midiIn"></select>
+      <label for="midiOut">MIDI Out</label>
+      <select id="midiOut" aria-label="MIDI Output"></select>
 
-      <div style="height:8px"></div>
-      <label for="midiOut">MIDI Output (Bass Destination)</label>
-      <select id="midiOut"></select>
-
-      <div style="height:8px"></div>
-      <button id="regenBtn">Regenerate Pattern</button>
-
-      <div style="height:10px"></div>
-      <div class="status">
-        <span class="pill" id="modeStatus">Mode: —</span>
-        <span class="pill" id="ornStatus">Ornament: —</span>
-        <span class="pill" id="tickStatus">Ticker: waiting…</span>
-        <span class="pill" id="inStatus">In: —</span>
-        <span class="pill" id="outStatus">Out: —</span>
-        <span class="pill">Bass Out Ch: 4</span>
-      </div>
+      <button id="panicBtn">Panic</button>
+      <span id="midiStatus" class="pill">MIDI: —</span>
+      <span class="pill">Bass Ch 4</span>
     </div>
 
-    <div class="card wide">
-      <div class="row" style="gap:24px; align-items:flex-start;">
-        <div style="min-width:240px;">
-          <label>Pattern (beats / ticks)</label>
-          <div><span id="patBeats" class="mono">—</span> beats &nbsp; <span id="patTicks" class="mono">—</span> ticks</div>
-          <div id="hitGrid" class="grid"></div>
-        </div>
-        <div>
-          <label>Now</label>
-          <div class="mono">step=<span id="curStep">—</span></div>
-          <div class="mono">absTick=<span id="absTick">—</span></div>
-        </div>
-      </div>
+    <div class="row">
+      <button id="genBtn">Generate Bassline</button>
+      <span class="pill">Pattern len: <span id="patLenOut" class="mono">—</span></span>
+      <span class="pill">Density: <span id="densityOut" class="mono">—</span></span>
+      <span class="pill">Mode: <span id="srcModeOut" class="mono">MIDI In</span></span>
+      <button id="toggleSrcBtn" class="small">Toggle Chord Source</button>
+    </div>
+
+    <div class="row">
+      <label for="legatoSlider">Legato</label>
+      <input id="legatoSlider" type="range" min="0" max="100" value="70" />
+      <span class="pill"> <span id="legatoVal" class="mono">70</span></span>
+
+      <label for="distanceSlider">Distance</label>
+      <input id="distanceSlider" type="range" min="0" max="100" value="0" />
+      <span class="pill"> <span id="distanceVal" class="mono">0</span></span>
+
+      <label for="densitySlider">Density</label>
+      <input id="densitySlider" type="range" min="0" max="100" value="40" />
+      <span class="pill"> <span id="densityVal" class="mono">40</span></span>
+    </div>
+
+    <div class="row small">
+      <span class="pill">tick <span id="tickOut" class="mono">—</span>/127</span>
+      <span class="pill">bpm <span id="bpmOut" class="mono">—</span></span>
+      <span class="pill">subdiv <span id="subdivOut" class="mono">—</span></span>
+      <span class="pill">Chord <span id="chordOut" class="mono">[]</span></span>
+      <span class="pill">Root <span id="rootOut" class="mono">—</span></span>
+      <span class="pill">Last chord tick <span id="lastChordTickOut" class="mono">—</span></span>
+    </div>
+
+    <div class="row small">
+      <span class="mono" id="noteDebug">—</span>
     </div>
   </div>
-
-  <div class="row" style="margin-top:12px;">
-    <div class="card wide">
-      <label>Debug</label>
-      <pre class="mono" id="debug"></pre>
-    </div>
-  </div>
-</div>
 
 <script>
 (() => {
-  // -----------------------
-  // Constants & Parameters
-  // -----------------------
-  const TICKER_CHANNEL = 'internal-ticker';
+  // =========================================================
+  // Config
+  // =========================================================
+  const LOOP_TICKS = 128;             // Cadence loop length (0..127)
+  const BASS_MIDI_CH = 3;             // 0-based -> Channel 4
+  const CHORD_CH = 0;                 // 0-based -> Channel 1 (chord tones)
+  const ROOT_CH  = 1;                 // 0-based -> Channel 2 (root)
+  const CHORD_BC_NAME = 'harmony-chords'; // Optional future BC chord feed
 
-  // MIDI routing
-  const MIDI_OUT_CH = 3;   // 0-based → Channel 4
-  const CHORD_IN_CH = 0;   // 0-based → Channel 1
+  // Key feed (from Harmony.html). If no key data is present, Distance is effectively forced to 0.
+  // IMPORTANT: This MUST match the exact BroadcastChannel used by Harmony.html.
+  // Harmony.html publishes to 'music-key'.
+  const KEY_BC_NAME = 'music-key';
 
-  // Register
-  const NOTE_MIN = 40;     // ≈ E2
-  const NOTE_MAX = 55;     // ≈ G3 (strictly < 60)
-  const CENTER   = 48;     // ≈ C3
+  // Note duration clamp (ms) — increased to support legato at slower BPM
+  const NOTE_MS_MIN = 70;
+  const NOTE_MS_MAX = 5000;
 
-  // Clock
-  const LOOP_TICKS = 128;  // global frame length (0..127)
-  const SUBDIV_PER_BEAT = 4;
+  // Legato factor range: % of time until next hit (mapped from slider 0..100)
+  const LEGATO_FACTOR_MIN = 0.30; // staccato-ish
+  const LEGATO_FACTOR_MAX = 0.99; // near-touching
 
-  // Rhythm density (unchanged sparse hits; sustain makes it feel continuous)
-  const DENSITY_MIN = 0.10;
-  const DENSITY_MAX = 0.20;
+  // Bass register target
+  const BASS_LO = 36; // C2
+  const BASS_HI = 52; // E3 (roughly)
 
-  // Continuous sustain: probability to leave a tiny 2-tick break before next onset
-  const GAP2_PROB = 0.10; // 10% of hits (when there is room) leave a 2-tick breath; otherwise no gap
+  // Note repetition bias: keep the same pitch more often
+  const REUSE_PROB_BEFORE_TWO = 0.88; // strongly encourage at least 2 repeats
+  const REUSE_PROB_AFTER_TWO  = 0.68; // still grounded after that
 
-  // Ornament parameters
-  const ORN_ENABLE_PROB = 0.5;    // enable per-pattern with 50% chance
-  const ORN_DELAY = 2;            // ticks after main onset
-  const ORN_DUR   = 1;            // 1 tick long
-  const ORN_LOW_P = 0.40;         // per-hit prob if p ≤ 45
-  const ORN_HIGH_P= 0.15;         // else
+  // =========================================================
+  // DOM
+  // =========================================================
+  const $ = (s) => document.querySelector(s);
+  const el = {
+    midiIn: $('#midiIn'),
+    midiOut: $('#midiOut'),
+    midiStatus: $('#midiStatus'),
+    genBtn: $('#genBtn'),
+    panicBtn: $('#panicBtn'),
+    patLenOut: $('#patLenOut'),
+    densityOut: $('#densityOut'),
+    tickOut: $('#tickOut'),
+    bpmOut: $('#bpmOut'),
+    subdivOut: $('#subdivOut'),
+    chordOut: $('#chordOut'),
+    rootOut: $('#rootOut'),
+    lastChordTickOut: $('#lastChordTickOut'),
+    noteDebug: $('#noteDebug'),
+    toggleSrcBtn: $('#toggleSrcBtn'),
+    srcModeOut: $('#srcModeOut'),
 
-  // -----------------------
-  // State
-  // -----------------------
-  let midi = null;
-  let midiOut = null;
-  let midiIn  = null;
-
-  // Ticker tracking
-  let lastTicker = null;
-  let lastCount = null;
-  let loopIndex = 0;     // increases each wrap
-  let absTick = -1;
-
-  // Held chord from MIDI In Ch.1
-  const heldNotes = new Set();
-  let currentChord = { notes: [], root: null, pcs: new Set() };
-
-  // Root memory for inference
-  const rootHistory = new Map();
-  const ROOT_HISTORY_DECAY = 0.9;
-
-  // Pattern
-  let patternBeats = 0;
-  let patternTicks = 0;
-  let hitMap = [];                // boolean[length=patternTicks]
-  let capturedPitches = [];       // (number|null)[length=patternTicks]; frozen once capture ends
-  let lastValidPitch = null;      // for fallback during capture
-
-  // Capture/Freeze state
-  const MODE = { CAPTURING: 'CAPTURING', FROZEN: 'FROZEN' };
-  let mode = MODE.CAPTURING;
-  let capStartLoop = 0;
-  let capStartCount = 0;
-  let capFrozenAtISO = null;
-
-  // Ornament state
-  let ornamentEnabled = false;
-  let lastOrnamentAtAbsTick = null;
-
-  // Voice / scheduling
-  const noteOffQueue = []; // items: { absDue:number, note:number } or { absDue:number, action:'blipOn'|'blipOff', note:number, vel?:number }
-  let activeNote = null;
-
-  // UI elements
-  const $midiIn  = document.getElementById('midiIn');
-  const $midiOut = document.getElementById('midiOut');
-  const $regen   = document.getElementById('regenBtn');
-  const $modeStatus = document.getElementById('modeStatus');
-  const $ornStatus  = document.getElementById('ornStatus');
-  const $tickStatus = document.getElementById('tickStatus');
-  const $inStatus = document.getElementById('inStatus');
-  const $outStatus = document.getElementById('outStatus');
-  const $patBeats = document.getElementById('patBeats');
-  const $patTicks = document.getElementById('patTicks');
-  const $curStep  = document.getElementById('curStep');
-  const $absTick  = document.getElementById('absTick');
-  const $debug    = document.getElementById('debug');
-  const $grid     = document.getElementById('hitGrid');
-
-  // -----------------------
-  // Utilities
-  // -----------------------
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const randInt = (a,b)=> Math.floor(Math.random()*(b-a+1))+a;
-  const pcOf = n => ((n%12)+12)%12;
-
-  function noteOn(note, vel) {
-    if (!midiOut) return;
-    // mono: end previous voice if different
-    if (activeNote !== null && activeNote !== note) {
-      midiOut.send([0x80 | MIDI_OUT_CH, activeNote & 0x7f, 0x40]);
-      activeNote = null;
-    }
-    midiOut.send([0x90 | MIDI_OUT_CH, note & 0x7f, vel & 0x7f]);
-    activeNote = note;
-  }
-  function noteOff(note) {
-    if (!midiOut) return;
-    midiOut.send([0x80 | MIDI_OUT_CH, note & 0x7f, 0x40]);
-    if (activeNote === note) activeNote = null;
-  }
-
-  function mapPitchClassIntoRegister(pc, center=CENTER, lo=NOTE_MIN, hi=NOTE_MAX) {
-    // Choose note with this pc near center, then clamp to [lo,hi] by octaves
-    let candidate = center - ((center - pc) % 12);
-    const diff = ((pc - (candidate % 12) + 12) % 12);
-    candidate += diff;
-    while (candidate > hi) candidate -= 12;
-    while (candidate < lo) candidate += 12;
-    if (candidate > hi) candidate -= 12;
-    return clamp(candidate, lo, hi);
-  }
-
-  function decayRootHistory() {
-    for (const k of rootHistory.keys()) {
-      rootHistory.set(k, rootHistory.get(k) * ROOT_HISTORY_DECAY);
-      if (rootHistory.get(k) < 0.01) rootHistory.delete(k);
-    }
-  }
-
-  function inferRootPitchClass(notes) {
-    if (!notes || notes.length === 0) return null;
-    const sorted = [...notes].sort((a,b)=>a-b);
-    const lowestPC = pcOf(sorted[0]);
-    const pcs = [...new Set(sorted.map(pcOf))];
-    let bestPC = lowestPC, bestScore = rootHistory.get(lowestPC) ?? 0;
-    for (const pc of pcs) {
-      const s = rootHistory.get(pc) ?? 0;
-      if (s > bestScore) { bestScore = s; bestPC = pc; }
-    }
-    return bestPC;
-  }
-
-  function computeAllowedNotesForChord(chord) {
-    if (!chord || chord.notes.length === 0) return [];
-    let rootPC = chord.root != null ? pcOf(chord.root) : inferRootPitchClass(chord.notes);
-    if (rootPC == null) rootPC = pcOf(Math.min(...chord.notes));
-    const rootBase = mapPitchClassIntoRegister(rootPC, CENTER, NOTE_MIN, NOTE_MAX);
-    const upperBound = Math.min(rootBase + 12, NOTE_MAX);
-    const pcs = new Set(chord.notes.map(pcOf));
-    const out = new Set([rootBase]);
-    for (const pc of pcs) {
-      let n = mapPitchClassIntoRegister(pc, CENTER, NOTE_MIN, NOTE_MAX);
-      while (n < rootBase) n += 12;
-      while (n > upperBound) n -= 12;
-      if (n >= rootBase && n <= upperBound) out.add(n);
-    }
-    if (rootBase + 12 <= NOTE_MAX) out.add(rootBase + 12);
-    return [...out].filter(n => n < 60).sort((a,b)=>a-b);
-  }
-
-  function nextHitDistance(fromStep) {
-    // distance in ticks to the next true in hitMap (wrap within pattern)
-    if (!hitMap.length) return 0;
-    for (let d = 1; d <= patternTicks; d++) {
-      const idx = (fromStep + d) % patternTicks;
-      if (hitMap[idx]) return d;
-    }
-    return patternTicks; // fallback
-  }
-
-  // Continuous/legato gate chooser: default = toNext (no gap), sometimes 2-tick breath
-  function chooseGateTicks(step) {
-    const toNext = Math.max(1, nextHitDistance(step)); // ticks until next main onset
-    let gate = toNext; // default continuous
-    if (toNext >= 3 && Math.random() < GAP2_PROB) {
-      gate = toNext - 2; // tiny breath
-    }
-    // Safety: allow gate == toNext (we'll drain NoteOff before the next NoteOn, yielding no gap)
-    return Math.max(1, gate);
-  }
-
-  // -----------------------
-  // Pattern generation (sparse, with guaranteed step 0)
-  // -----------------------
-  function makeSparseHitMap(beats) {
-    const ticks = beats * SUBDIV_PER_BEAT;
-    const arr = new Array(ticks).fill(false);
-    // Mandatory downbeat
-    arr[0] = true;
-    // Fill to ~10–20% density total (including step 0)
-    const targetTotal = Math.max(1, Math.floor(ticks * (DENSITY_MIN + Math.random() * (DENSITY_MAX - DENSITY_MIN))));
-    let placed = 1, guard = 0;
-    while (placed < targetTotal && guard < ticks * 6) {
-      guard++;
-      const k = randInt(1, ticks - 1);
-      if (arr[k]) continue;
-      arr[k] = true;
-      placed++;
-    }
-    return arr;
-  }
-
-  function drawHitGrid() {
-    // Grid shows exactly patternTicks columns
-    $grid.style.gridTemplateColumns = `repeat(${patternTicks}, 1fr)`;
-    $grid.innerHTML = '';
-    for (let i=0; i<patternTicks; i++) {
-      const d = document.createElement('div');
-      d.className = 'cell' + (hitMap[i] ? ' on' : '');
-      $grid.appendChild(d);
-    }
-  }
-
-  function regenPattern() {
-    // choose length 4/8/16 beats
-    const choices = [4,8,16];
-    patternBeats = choices[randInt(0, choices.length-1)];
-    patternTicks = patternBeats * SUBDIV_PER_BEAT;
-    hitMap = makeSparseHitMap(patternBeats);
-
-    // reset capture
-    capturedPitches = new Array(patternTicks).fill(null);
-    lastValidPitch = null;
-    enterCapturing();
-
-    // ornament toggle (per-pattern)
-    ornamentEnabled = Math.random() < ORN_ENABLE_PROB;
-    lastOrnamentAtAbsTick = null;
-
-    $patBeats.textContent = String(patternBeats);
-    $patTicks.textContent = String(patternTicks);
-    drawHitGrid();
-    updateDebug();
-  }
-
-  function enterCapturing() {
-    mode = MODE.CAPTURING;
-    capStartLoop = loopIndex;
-    capStartCount = lastCount ?? 0;
-    capFrozenAtISO = null;
-    updateModeStatus();
-    updateOrnamentStatus();
-  }
-
-  function maybeFreezeOnWrap(currentCount) {
-    // Transition to Frozen at the first wrap (127→0) that occurs after start.
-    if (mode !== MODE.CAPTURING) return;
-    if (currentCount === 0 && loopIndex > capStartLoop) {
-      mode = MODE.FROZEN;
-      capFrozenAtISO = new Date().toISOString();
-      updateModeStatus();
-      updateDebug();
-    }
-  }
-
-  function captureProgressTicks() {
-    const loopsDelta = loopIndex - capStartLoop;
-    const ticksAbs = loopsDelta * LOOP_TICKS + (lastCount ?? 0);
-    return (ticksAbs - capStartCount + LOOP_TICKS) % LOOP_TICKS;
-  }
-
-  // -----------------------
-  // Web MIDI I/O
-  // -----------------------
-  async function initMIDI() {
-    try {
-      midi = await navigator.requestMIDIAccess({ sysex: false });
-    } catch (e) {
-      $inStatus.textContent = 'In: MIDI unavailable';
-      $outStatus.textContent = 'Out: MIDI unavailable';
-      console.error('Web MIDI not available', e);
-      return;
-    }
-    midi.onstatechange = refreshIO;
-    refreshIO();
-  }
-
-  function refreshIO() {
-    // Outputs
-    $midiOut.innerHTML = '';
-    const outs = midi ? [...midi.outputs.values()] : [];
-    if (outs.length === 0) {
-      const opt=document.createElement('option'); opt.value=''; opt.textContent='(no outputs)'; $midiOut.appendChild(opt);
-      midiOut = null;
-    } else {
-      outs.forEach((o, idx) => {
-        const opt = document.createElement('option');
-        opt.value = o.id;
-        opt.textContent = o.name || `Output ${idx+1}`;
-        $midiOut.appendChild(opt);
-      });
-      if (!midiOut || !outs.find(o=>o.id===midiOut.id)) {
-        midiOut = outs[0];
-        $midiOut.value = outs[0].id;
-      }
-    }
-    // Inputs
-    $midiIn.innerHTML = '';
-    const ins = midi ? [...midi.inputs.values()] : [];
-    if (ins.length === 0) {
-      const opt=document.createElement('option'); opt.value=''; opt.textContent='(no inputs)'; $midiIn.appendChild(opt);
-      bindInput(null);
-    } else {
-      ins.forEach((i, idx) => {
-        const opt = document.createElement('option');
-        opt.value = i.id;
-        opt.textContent = i.name || `Input ${idx+1}`;
-        $midiIn.appendChild(opt);
-      });
-      if (!midiIn || !ins.find(i=>i.id===midiIn.id)) {
-        bindInput(ins[0]);
-        $midiIn.value = ins[0].id;
-      }
-    }
-    updateStatuses();
-  }
-
-  function bindInput(port) {
-    if (midiIn) midiIn.onmidimessage = null;
-    midiIn = port || null;
-    if (midiIn) midiIn.onmidimessage = handleMIDIMessage;
-  }
-
-  $midiOut.addEventListener('change', () => {
-    const id = $midiOut.value;
-    const outs = midi ? [...midi.outputs.values()] : [];
-    midiOut = outs.find(o => o.id === id) || null;
-    updateStatuses();
-  });
-  $midiIn.addEventListener('change', () => {
-    const id = $midiIn.value;
-    const ins = midi ? [...midi.inputs.values()] : [];
-    bindInput(ins.find(i => i.id === id) || null);
-    updateStatuses();
-  });
-
-  // -----------------------
-  // MIDI Input parsing (listen on Channel 1)
-  // -----------------------
-  function handleMIDIMessage(ev) {
-    const [status, data1, data2] = ev.data;
-    const type = status & 0xF0;
-    const ch   = status & 0x0F;
-    if (ch !== CHORD_IN_CH) return;
-
-    if (type === 0x90) { // Note On
-      const note = data1 & 0x7F;
-      const vel  = data2 & 0x7F;
-      if (vel > 0) heldNotes.add(note);
-      else heldNotes.delete(note); // vel 0 as Note Off
-      onHeldNotesChanged();
-    } else if (type === 0x80) { // Note Off
-      const note = data1 & 0x7F;
-      heldNotes.delete(note);
-      onHeldNotesChanged();
-    } else if (type === 0xB0) { // CC
-      const cc = data1 & 0x7F;
-      if (cc === 123) { // All Notes Off
-        heldNotes.clear();
-        onHeldNotesChanged();
-      }
-    }
-  }
-
-  function onHeldNotesChanged() {
-    const notes = [...heldNotes].sort((a,b)=>a-b);
-    const pcs = new Set(notes.map(pcOf));
-    currentChord = { notes, root: null, pcs };
-
-    // Root memory
-    decayRootHistory();
-    if (notes.length) {
-      const inferredPC = inferRootPitchClass(notes);
-      if (inferredPC != null) rootHistory.set(inferredPC, (rootHistory.get(inferredPC) ?? 0) + 1.0);
-    }
-    updateStatuses();
-    updateDebug();
-  }
-
-  // -----------------------
-  // BroadcastChannel — ticker
-  // -----------------------
-  const tickerChan = new BroadcastChannel(TICKER_CHANNEL);
-  tickerChan.onmessage = (ev) => {
-    const msg = ev.data;
-    if (!msg || msg.type !== 'tick') return;
-
-    if (lastCount == null) {
-      loopIndex = 0;
-    } else if (msg.count < lastCount) {
-      loopIndex += 1; // wrapped
-    }
-    lastCount = msg.count | 0;
-    absTick = loopIndex * LOOP_TICKS + lastCount;
-    lastTicker = msg;
-
-    processTick(absTick, lastCount);
-    maybeFreezeOnWrap(lastCount);
+    // Sliders
+    legatoSlider: $('#legatoSlider'),
+    distanceSlider: $('#distanceSlider'),
+    densitySlider: $('#densitySlider'),
+    legatoVal: $('#legatoVal'),
+    distanceVal: $('#distanceVal'),
+    densityVal: $('#densityVal'),
   };
 
-  // -----------------------
-  // Queue helpers (handle ornaments + offs)
-  // -----------------------
-  function handleQueueItem(item) {
-    if (!item.action) {
-      noteOff(item.note);
-      return;
-    }
-    if (item.action === 'blipOn') {
-      if (activeNote !== null) noteOff(activeNote);
-      noteOn(item.note, item.vel ?? 96);
-      return;
-    }
-    if (item.action === 'blipOff') {
-      noteOff(item.note);
-      return;
-    }
-  }
+  // =========================================================
+  // State
+  // =========================================================
+  const state = {
+    // Timing
+    lastTickCount: -1,
+    lastTickAtMs: 0,
+    bpm: 120,
+    subdiv: 4,
 
-  function drainQueueUpTo(abs){
-    while (noteOffQueue.length && noteOffQueue[0].absDue <= abs) {
-      const item = noteOffQueue.shift();
-      handleQueueItem(item);
-    }
-  }
+    // Sliders
+    legato: 70,
+    distance: 0,
+    density: 40,
 
-  function insertNoteOff(item) {
-    let i = 0;
-    while (i < noteOffQueue.length && noteOffQueue[i].absDue <= item.absDue) i++;
-    noteOffQueue.splice(i, 0, item);
-  }
+    // Chord input
+    chordSource: 'midi', // 'midi' | 'bc'
+    chordNotesSet: new Set(),        // current chord tones (absolute MIDI notes from input)
+    currentChordNotes: [],           // sorted unique
+    currentRootNote: -1,             // absolute MIDI note
+    lastChordSignature: '',
+    lastChordNotesSig: '',
+    lastChordAttackSig: '',
+    lastChordAttackMs: 0,
+    needChordToneNext: true,
+    lastChordChangeTick: null,
+    chordChangeTicks: [0],           // observed within loop (tick indices), always include 0
 
-  function scheduleMonoSwitch(atAbsTick, blipNote, blipVel, blipDurTicks) {
-    insertNoteOff({ absDue: atAbsTick, action: 'blipOn', note: blipNote, vel: blipVel });
-    insertNoteOff({ absDue: atAbsTick + blipDurTicks, action: 'blipOff', note: blipNote });
-  }
+    // Key input (from Harmony)
+    currentKeyRoot: null,            // pitch class 0..11
+    currentScaleType: null,          // string like 'major'/'minor' (optional)
+    currentScalePCSet: null,         // Set<pitchClass>
+    hasKey: false,
 
-  // -----------------------
-  // Main tick handler
-  // -----------------------
-  function processTick(abs, loopCount) {
-    $absTick.textContent = String(abs);
-    updateStatuses();
+    // Pattern
+    patternLen: 32,                  // 16/32/64
+    hitLevel: [],                    // null OR 0..1 importance rank (lower = more important)
+    forcedHits: new Set(),
+    roleMask: [],
+    randA: [],
+    randB: [],
+    densityLabel: '—',
 
-    // Drain due actions/offs FIRST (guarantees we can sustain to next onset with gate==toNext)
-    drainQueueUpTo(abs);
+    // Playback
+    activeBassNote: null,
+    activeBassOffTimer: null,
 
-    if (!midiOut || !lastTicker || !patternTicks) return;
+    // Repetition / grounding
+    lastChosenBassNote: null,
+    lastChosenRepeatCount: 0,
+  };
 
-    const step = loopCount % patternTicks;
-    $curStep.textContent = String(step);
-    highlightGridStep(step);
+  // =========================================================
+  // MIDI (in+out)
+  // =========================================================
+  const MIDI = {
+    access: null,
+    in: null,
+    out: null,
 
-    if (!hitMap[step]) {
-      updateModeStatus(); // progress counter in capturing mode
-      return; // rest
-    }
-
-    // Pitch selection
-    let pitch = null;
-    if (mode === MODE.FROZEN) {
-      pitch = capturedPitches[step];
-      if (pitch == null) { updateModeStatus(); return; } // rest if nothing captured there
-    } else {
-      // CAPTURING: build allowed from current chord
-      const allowed = computeAllowedNotesForChord(currentChord);
-      if (step === 0 && allowed.length) {
-        pitch = allowed[0]; // prefer lowest/root-ish on downbeat
-      } else if (allowed.length) {
-        pitch = allowed[randInt(0, allowed.length - 1)];
-      } else if (lastValidPitch != null) {
-        pitch = lastValidPitch;
-      } else {
-        // final fallback: mapped root from (inferred or lowest)
-        const rootPC = inferRootPitchClass(currentChord.notes) ?? pcOf(currentChord.notes[0] ?? CENTER);
-        pitch = mapPitchClassIntoRegister(rootPC, CENTER, NOTE_MIN, NOTE_MAX);
+    async init() {
+      try {
+        this.access = await navigator.requestMIDIAccess({ sysex:false });
+        this.access.onstatechange = () => { this.refreshInputs(); this.refreshOutputs(); };
+        this.refreshInputs();
+        this.refreshOutputs();
+        el.midiStatus.textContent = 'MIDI: ready';
+      } catch (e) {
+        el.midiStatus.textContent = 'MIDI: unavailable';
+        console.warn('Web MIDI init failed', e);
       }
-      if (pitch >= 60) pitch -= 12;
-      lastValidPitch = pitch;
-      // Record the *actual* pitch used for this step
-      capturedPitches[step] = pitch;
+    },
+
+    inputs() {
+      if (!this.access) return [];
+      return Array.from(this.access.inputs.values());
+    },
+    outputs() {
+      if (!this.access) return [];
+      return Array.from(this.access.outputs.values());
+    },
+
+    refreshInputs() {
+      const ins = this.inputs();
+      const old = el.midiIn.value;
+      el.midiIn.innerHTML = '';
+      if (!ins.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '(no inputs)';
+        el.midiIn.appendChild(opt);
+        this.selectInById('');
+        return;
+      }
+      ins.forEach(i => {
+        const opt = document.createElement('option');
+        opt.value = i.id;
+        opt.textContent = i.name || i.manufacturer || i.id;
+        el.midiIn.appendChild(opt);
+      });
+      const pick = ins.find(i => i.id === old) || ins[0];
+      el.midiIn.value = pick.id;
+      this.selectInById(pick.id);
+    },
+
+    refreshOutputs() {
+      const outs = this.outputs();
+      const old = el.midiOut.value;
+      el.midiOut.innerHTML = '';
+      if (!outs.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '(no outputs)';
+        el.midiOut.appendChild(opt);
+        this.selectOutById('');
+        return;
+      }
+      outs.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = o.name || o.manufacturer || o.id;
+        el.midiOut.appendChild(opt);
+      });
+      const pick = outs.find(o => o.id === old) || outs[0];
+      el.midiOut.value = pick.id;
+      this.selectOutById(pick.id);
+    },
+
+    selectInById(id) {
+      if (this.in) this.in.onmidimessage = null;
+      const ins = this.inputs();
+      this.in = ins.find(i => i.id === id) || null;
+      if (this.in) this.in.onmidimessage = onMIDIMessage;
+    },
+
+    selectOutById(id) {
+      const outs = this.outputs();
+      this.out = outs.find(o => o.id === id) || null;
+    },
+
+    send(bytes) {
+      if (this.out) this.out.send(bytes);
+    },
+
+    noteOn(note, vel=96, ch=BASS_MIDI_CH) {
+      this.send([0x90 + (ch & 0x0F), note & 0x7F, vel & 0x7F]);
+    },
+    noteOff(note, ch=BASS_MIDI_CH) {
+      this.send([0x80 + (ch & 0x0F), note & 0x7F, 0]);
+    },
+    allNotesOff() {
+      if (!this.out) return;
+      for (let ch=0; ch<16; ch++) this.out.send([0xB0 + ch, 123, 0]);
+      for (let n=0; n<128; n++) this.out.send([0x80 + (BASS_MIDI_CH & 0x0F), n, 0]);
+    },
+    allNotesOffChannel(ch) {
+      if (!this.out) return;
+      const c = (ch & 0x0F);
+      // CC123 All Notes Off + CC120 All Sound Off for belt-and-suspenders.
+      this.out.send([0xB0 + c, 123, 0]);
+      this.out.send([0xB0 + c, 120, 0]);
+    }
+  };
+
+  function parseStatus(status) {
+    const type = status & 0xF0;
+    const ch = status & 0x0F;
+    return { type, ch };
+  }
+
+  // Debounce chord recompute (MIDI messages can arrive clustered on chord changes)
+  let chordRecomputeTimer = null;
+  function scheduleChordRecompute() {
+    if (chordRecomputeTimer) clearTimeout(chordRecomputeTimer);
+    chordRecomputeTimer = setTimeout(() => {
+      chordRecomputeTimer = null;
+      commitChordUpdate();
+    }, 8);
+  }
+
+  function onMIDIMessage(ev) {
+    if (state.chordSource !== 'midi') return;
+
+    const data = ev.data || [];
+    if (data.length < 2) return;
+
+    const { type, ch } = parseStatus(data[0]);
+    const note = data[1] & 0x7F;
+    const vel  = (data.length > 2) ? (data[2] & 0x7F) : 0;
+
+    const isNoteOn  = (type === 0x90 && vel > 0);
+    const isNoteOff = (type === 0x80) || (type === 0x90 && vel === 0);
+
+    if (ch === CHORD_CH) {
+      if (isNoteOn) {
+        state.chordNotesSet.add(note);
+        scheduleChordRecompute();
+      } else if (isNoteOff) {
+        state.chordNotesSet.delete(note);
+        scheduleChordRecompute();
+      }
+    } else if (ch === ROOT_CH) {
+      if (isNoteOn) {
+        state.currentRootNote = note;
+        scheduleChordRecompute();
+      } else if (isNoteOff) {
+        if (state.currentRootNote === note) state.currentRootNote = -1;
+        scheduleChordRecompute();
+      }
+    }
+  }
+
+  function normalizeChordNotes(arr) {
+    const uniq = Array.from(new Set(arr.map(n => n|0))).filter(n => n >= 0 && n <= 127);
+    uniq.sort((a,b)=>a-b);
+    return uniq;
+  }
+
+  function chordSignature(chordNotes, rootNote) {
+    return `r:${rootNote}|c:${chordNotes.join(',')}`;
+  }
+
+  function commitChordUpdate() {
+    const chordNotes = normalizeChordNotes(Array.from(state.chordNotesSet));
+    state.currentChordNotes = chordNotes;
+
+    if (state.currentRootNote < 0 && chordNotes.length) state.currentRootNote = chordNotes[0];
+
+    const chordNotesSig = chordNotes.join(',');
+    const chordChanged = (chordNotesSig !== state.lastChordNotesSig);
+
+    // Keep full signature for debug/UI, but treat "chord changed" as chord-content change (not root-only updates).
+    const sig = chordSignature(chordNotes, state.currentRootNote);
+    const sigChanged = (sig !== state.lastChordSignature);
+    if (sigChanged) state.lastChordSignature = sig;
+
+    if (chordChanged) {
+      state.lastChordNotesSig = chordNotesSig;
+      state.needChordToneNext = true;
+      const t = state.lastTickCount;
+      if (t >= 0) recordChordChangeTick(t);
+      renderChordUI();
+
+      // Requirement: immediate bass note on chord-content change (independent of rhythm mask)
+      chordChangeAttack('midi');
+    } else {
+      // Root-only updates still refresh UI, but must not retrigger the chord-change attack.
+      renderChordUI();
+    }
+  }
+
+  function chordChangeAttack(source='midi') {
+    const chord = state.currentChordNotes || [];
+    if (!chord.length) return;
+    if (!MIDI.out) return;
+
+    const sig = chordSignature(chord, state.currentRootNote);
+    const now = performance.now();
+    if (state.lastChordAttackSig === sig && (now - (state.lastChordAttackMs||0)) < 25) return;
+    state.lastChordAttackSig = sig;
+    state.lastChordAttackMs = now;
+
+    // 1) Stop/cut off current bass note immediately
+    if (state.activeBassOffTimer) { clearTimeout(state.activeBassOffTimer); state.activeBassOffTimer = null; }
+    if (state.activeBassNote != null) {
+      MIDI.noteOff(state.activeBassNote, BASS_MIDI_CH);
+      state.activeBassNote = null;
+    }
+    // Avoid overlap: hard stop bass channel only (do NOT kill Harmony chords).
+    MIDI.allNotesOffChannel(BASS_MIDI_CH);
+
+    // 2) Start a new bass note immediately: chord tones only, strongly prefer root
+    // Reset grounding to "first note after chord change"
+    state.lastChosenBassNote = null;
+    state.lastChosenRepeatCount = 0;
+
+    const rootAbs = (state.currentRootNote >= 0) ? state.currentRootNote : chord[0];
+    const root = shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI);
+
+    MIDI.noteOn(root, 96, BASS_MIDI_CH);
+    state.activeBassNote = root;
+
+    // Treat this as the first note after change
+    state.needChordToneNext = false;
+    state.lastChosenBassNote = root;
+    state.lastChosenRepeatCount = 1;
+
+    // Schedule note-off using current Legato setting, relative to next planned hit
+    const len = state.patternLen|0;
+    if (len > 0 && state.lastTickCount >= 0) {
+      const p = ((state.lastTickCount % len) + len) % len;
+      scheduleLegatoNoteOff(root, p, len);
+    } else {
+      const ms = clamp(tickMs() * legatoFactor(), NOTE_MS_MIN, NOTE_MS_MAX);
+      state.activeBassOffTimer = setTimeout(() => {
+        MIDI.noteOff(root, BASS_MIDI_CH);
+        if (state.activeBassNote === root) state.activeBassNote = null;
+      }, ms);
     }
 
-    // Fire main note with continuous/near-continuous gate
-    if (activeNote !== null) noteOff(activeNote);
-    const toNext = Math.max(1, nextHitDistance(step));
-    const gate = chooseGateTicks(step);
-    const vel = randInt(84, 104);
-    noteOn(pitch, vel);
-    insertNoteOff({ absDue: abs + gate, note: pitch });
+    el.noteDebug.textContent = `chord-attack(${source}) root=${root} sig=${sig}`;
+  }
 
-    // Optional ORNAMENT: schedule an octave blip p+12 two ticks later for 1 tick
-    if (ornamentEnabled) {
-      const blipPitch = pitch + 12;
-      const enoughSpace = toNext >= (ORN_DELAY + ORN_DUR); // need at least 3 ticks to avoid collision
-      const inRegister = blipPitch < 60;
-      if (enoughSpace && inRegister) {
-        const p_hit = (pitch <= 45) ? ORN_LOW_P : ORN_HIGH_P;
-        if (Math.random() < p_hit) {
-          scheduleMonoSwitch(abs + ORN_DELAY, blipPitch, vel, ORN_DUR);
-          lastOrnamentAtAbsTick = abs + ORN_DELAY;
+  function recordChordChangeTick(tickCount) {
+    const t = ((tickCount % LOOP_TICKS) + LOOP_TICKS) % LOOP_TICKS;
+    state.lastChordChangeTick = t;
+
+    if (!state.chordChangeTicks.includes(0)) state.chordChangeTicks.push(0);
+    if (!state.chordChangeTicks.includes(t)) state.chordChangeTicks.push(t);
+
+    if (t === 0) state.chordChangeTicks = [0];
+    state.chordChangeTicks.sort((a,b)=>a-b);
+  }
+
+  // =========================================================
+  // BroadcastChannel chord source (optional)
+  // =========================================================
+  function initChordBC() {
+    const bc = new BroadcastChannel(CHORD_BC_NAME);
+    bc.onmessage = (ev) => {
+      if (state.chordSource !== 'bc') return;
+      const m = ev.data || {};
+      if (!m || m.type !== 'chord') return;
+
+      const chordNotes = Array.isArray(m.chordNotes) ? m.chordNotes.map(x=>x|0) : [];
+      const root = (typeof m.rootNote === 'number') ? (m.rootNote|0) : -1;
+
+      state.currentChordNotes = normalizeChordNotes(chordNotes);
+      state.currentRootNote = root;
+      if (state.currentRootNote < 0 && state.currentChordNotes.length) state.currentRootNote = state.currentChordNotes[0];
+
+      const chordNotesSig = (state.currentChordNotes || []).join(',');
+      const chordChanged = (chordNotesSig !== state.lastChordNotesSig);
+
+      const sig = chordSignature(state.currentChordNotes, state.currentRootNote);
+      const sigChanged = (sig !== state.lastChordSignature);
+      if (sigChanged) state.lastChordSignature = sig;
+
+      if (chordChanged) {
+        state.lastChordNotesSig = chordNotesSig;
+        state.needChordToneNext = true;
+        if (state.lastTickCount >= 0) recordChordChangeTick(state.lastTickCount);
+        renderChordUI();
+        chordChangeAttack('bc');
+      } else {
+        renderChordUI();
+      }
+    };
+  }
+
+  // =========================================================
+  // Key / scale feed (from Harmony.html)
+  // =========================================================
+  function initKeyBC() {
+    const bc = new BroadcastChannel(KEY_BC_NAME);
+    bc.onmessage = (ev) => {
+      const m = ev.data || {};
+      if (!m || typeof m !== 'object') return;
+
+      const parsed = parseKeyMessage(m);
+      if (!parsed) return;
+
+      state.currentKeyRoot = parsed.root;
+      state.currentScaleType = parsed.scaleType;
+      state.currentScalePCSet = parsed.pcSet;
+      state.hasKey = !!(parsed.pcSet && parsed.pcSet.size);
+    };
+  }
+
+  function parseKeyMessage(m) {
+    const type = (typeof m.type === 'string') ? m.type.toLowerCase() : '';
+    const mightBeKey = type.includes('key') || type.includes('scale') || ('key' in m) || ('scale' in m) || ('pcSet' in m) || ('pitchClasses' in m) || ('tonicPc' in m) || ('mode' in m);
+    if (!mightBeKey) return null;
+
+    // 1) If explicit pitch-class set exists, use it
+    const pcsArr = Array.isArray(m.pcSet) ? m.pcSet
+      : Array.isArray(m.pitchClasses) ? m.pitchClasses
+      : Array.isArray(m.scalePCs) ? m.scalePCs
+      : Array.isArray(m.pcs) ? m.pcs
+      : null;
+    if (pcsArr && pcsArr.length) {
+      const pcSet = new Set(pcsArr.map(x => ((x|0) % 12 + 12) % 12));
+      const root = extractKeyRoot(m);
+      const scaleType = extractScaleType(m);
+      return { root, scaleType, pcSet };
+    }
+
+    // 2) Parse key string like "C minor"
+    if (typeof m.key === 'string') {
+      const out = parseKeyString(m.key);
+      if (out) return out;
+    }
+
+    // 3) Root + scaleType -> build set (Harmony.html uses tonicPc + mode)
+    const root = extractKeyRoot(m);
+    const scaleType = extractScaleType(m);
+    if (root == null || !scaleType) return null;
+    const pcSet = buildScalePCSet(root, scaleType);
+    if (!pcSet || !pcSet.size) return null;
+    return { root, scaleType, pcSet };
+  }
+
+  function extractKeyRoot(m) {
+    // Harmony.html publishes:
+    // { type:'key', tonic:'C', mode:'major'|'minor', tonicPc:<0..11>, tonicMidi:<midi> }
+    // Accept either pitch-class numbers or note-name strings.
+    const numCand = (
+      (typeof m.root === 'number' ? m.root : null) ??
+      (typeof m.tonicPc === 'number' ? m.tonicPc : null) ??
+      (typeof m.tonicMidi === 'number' ? m.tonicMidi : null) ??
+      (typeof m.tonic === 'number' ? m.tonic : null) ??
+      (typeof m.keyRoot === 'number' ? m.keyRoot : null) ??
+      (typeof m.rootNote === 'number' ? m.rootNote : null) ??
+      (typeof m.rootMidi === 'number' ? m.rootMidi : null)
+    );
+    if (numCand != null) {
+      const n = numCand|0;
+      return ((n % 12) + 12) % 12;
+    }
+
+    // String tonic like "C", "Eb", "F#"
+    if (typeof m.tonic === 'string') {
+      const pc = noteNameToPc(String(m.tonic).trim());
+      if (pc != null) return pc;
+    }
+
+    // String root like "C#", "Bb"
+    if (typeof m.rootName === 'string') {
+      const pc = noteNameToPc(String(m.rootName).trim());
+      if (pc != null) return pc;
+    }
+
+    return null;
+  }
+
+  function extractScaleType(m) {
+    const s = (
+      (typeof m.scaleType === 'string' ? m.scaleType : null) ??
+      (typeof m.scale === 'string' ? m.scale : null) ??
+      (typeof m.mode === 'string' ? m.mode : null) ??
+      (typeof m.quality === 'string' ? m.quality : null)
+    );
+    if (!s) return null;
+    return String(s).trim().toLowerCase().replace(/\s+/g,'_');
+  }
+
+  function parseKeyString(str) {
+    const s = String(str).trim();
+    const m = s.match(/^([A-Ga-g])\s*([#b]?)(?:\s+|$)(.*)$/);
+    if (!m) return null;
+    const letter = m[1].toUpperCase();
+    const accidental = m[2] || '';
+    const rest = (m[3] || '').trim().toLowerCase();
+    const rootPc = noteNameToPc(letter + accidental);
+    if (rootPc == null) return null;
+    const scaleType = rest ? rest.replace(/\s+/g,'_') : 'major';
+    const pcSet = buildScalePCSet(rootPc, scaleType);
+    if (!pcSet || !pcSet.size) return null;
+    return { root: rootPc, scaleType, pcSet };
+  }
+
+  function noteNameToPc(name) {
+    const map = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+    const L = name[0]?.toUpperCase();
+    if (!map.hasOwnProperty(L)) return null;
+    let pc = map[L];
+    if (name.includes('#')) pc += 1;
+    if (name.includes('b')) pc -= 1;
+    return ((pc % 12) + 12) % 12;
+  }
+
+  function buildScalePCSet(rootPc, scaleType) {
+    const r = ((rootPc|0) % 12 + 12) % 12;
+    const type = String(scaleType || '').toLowerCase();
+    const patterns = {
+      major:            [0,2,4,5,7,9,11],
+      minor:            [0,2,3,5,7,8,10],
+      natural_minor:    [0,2,3,5,7,8,10],
+      harmonic_minor:   [0,2,3,5,7,8,11],
+      melodic_minor:    [0,2,3,5,7,9,11],
+      dorian:           [0,2,3,5,7,9,10],
+      phrygian:         [0,1,3,5,7,8,10],
+      lydian:           [0,2,4,6,7,9,11],
+      mixolydian:       [0,2,4,5,7,9,10],
+      locrian:          [0,1,3,5,6,8,10],
+    };
+    const pat = patterns[type] || patterns[type.replace(/^ionian$/,'major')] || patterns[type.replace(/^aeolian$/,'minor')];
+    if (!pat) return null;
+    return new Set(pat.map(x => (r + x) % 12));
+  }
+
+  // =========================================================
+  // Ticks from Cadence (internal-ticker)
+  // =========================================================
+  function initTicker() {
+    const bc = new BroadcastChannel('internal-ticker');
+    bc.onmessage = (ev) => {
+      const m = ev.data || {};
+      if (!m) return;
+
+      if (m.type === 'tick') {
+        onTick(m);
+      } else if ((m.type === 'transport' && (m.state === 'stopped' || m.play === false)) || m.type === 'stop') {
+        panic('transport stop');
+      }
+    };
+  }
+
+  function onTick(msg) {
+    const t = (msg.count|0) % LOOP_TICKS;
+    state.lastTickCount = t;
+    state.lastTickAtMs = performance.now();
+
+    if (typeof msg.bpm === 'number' && msg.bpm > 0) state.bpm = msg.bpm;
+    if (typeof msg.subdiv === 'number' && msg.subdiv > 0) state.subdiv = msg.subdiv;
+
+    renderTickUI(t);
+    playPatternTick(t);
+  }
+
+  function tickMs() {
+    const bpm = (state.bpm && state.bpm > 0) ? state.bpm : 120;
+    const subdiv = (state.subdiv && state.subdiv > 0) ? state.subdiv : 4;
+    return 60000 / (bpm * subdiv);
+  }
+
+  // =========================================================
+  // Bass pattern generation
+  // =========================================================
+  function choice(arr){ return arr[(Math.random()*arr.length)|0]; }
+  function randInt(min,max){ return ((Math.random()*(max-min+1))|0) + min; }
+  function randFloat(min,max){ return min + Math.random() * (max - min); }
+
+  function buildDefaultMasks(len) {
+    return {
+      hitLevel: new Array(len).fill(null),
+      role:     new Array(len).fill('R'),
+      randA:    new Array(len).fill(0),
+      randB:    new Array(len).fill(0),
+    };
+  }
+
+  function generateBassline() {
+    const len = choice([16, 32, 64]);
+    state.patternLen = len;
+
+    state.patternSeed = ((Math.random() * 0x7FFFFFFF) | 0) ^ (Date.now() | 0);
+
+    const { hitLevel, role, randA, randB } = buildDefaultMasks(len);
+
+    const baseWeights = new Array(len).fill(1);
+    for (let i=0; i<len; i++){
+      const in16 = i % 16;
+      if (in16 === 0) baseWeights[i] += 5;
+      if (in16 === 8) baseWeights[i] += 3;
+      if (in16 === 4 || in16 === 12) baseWeights[i] += 2;
+      if (in16 % 2 === 0) baseWeights[i] += 1;
+      if (in16 === 1 || in16 === 3 || in16 === 5 || in16 === 7 || in16 === 9 || in16 === 11 || in16 === 13 || in16 === 15) {
+        baseWeights[i] -= 0.25;
+      }
+    }
+
+    const MAX_HITS_PER16 = 7;
+    const maxHits = Math.max(1, Math.round((MAX_HITS_PER16/16) * len));
+
+    const picked = new Set();
+    for (let k=0; k<maxHits; k++){
+      let tries = 0;
+      while (tries++ < 300) {
+        const idx = weightedPickIndex(baseWeights);
+        if (!picked.has(idx)) { picked.add(idx); break; }
+      }
+    }
+
+    for (let i=0; i<len; i++){
+      if (!picked.has(i)) { role[i] = 'R'; continue; }
+      const in16 = i % 16;
+      const strong = (in16 === 0 || in16 === 8 || in16 === 4 || in16 === 12);
+      if (strong) role[i] = (Math.random() < 0.88) ? 'R' : 'O';
+      else role[i] = (Math.random() < 0.70) ? 'R' : 'O';
+    }
+
+    const forcedHits = enforceAtLeastOneHitPerChordRegion(picked, len);
+    const adjPairs = findAdjacentHitPairs(picked, len);
+
+    const pickedArr = Array.from(picked);
+    pickedArr.sort((a,b) => (baseWeights[b] - baseWeights[a]) || (a-b));
+    const denom = Math.max(1, pickedArr.length - 1);
+    for (let i=0; i<pickedArr.length; i++){
+      const p = pickedArr[i];
+      hitLevel[p] = i / denom;
+    }
+    for (const p of forcedHits) hitLevel[p] = 0;
+
+    for (const [a,b] of adjPairs) {
+      if (forcedHits.has(b)) continue;
+      if (hitLevel[b] != null) hitLevel[b] = clamp(hitLevel[b] + 0.18, 0, 1);
+    }
+
+    for (let i=0; i<len; i++) {
+      const r1 = u32ToUnit(hashU32(state.patternSeed, i * 2654435761));
+      const r2 = u32ToUnit(hashU32(state.patternSeed ^ 0xA5A5A5A5, i * 1597334677));
+      randA[i] = r1;
+      randB[i] = r2;
+    }
+
+    state.hitLevel = hitLevel;
+    state.forcedHits = forcedHits;
+    state.roleMask = role;
+    state.randA = randA;
+    state.randB = randB;
+
+    state.needChordToneNext = true;
+    state.lastChosenBassNote = null;
+    state.lastChosenRepeatCount = 0;
+
+    el.patLenOut.textContent = String(len);
+    el.densityOut.textContent = String(state.density|0);
+    if (el.densityVal) el.densityVal.textContent = String(state.density|0);
+    el.noteDebug.textContent = `Generated: len=${len}, maxHits=${picked.size}, forced=${forcedHits.size}`;
+  }
+
+  function findAdjacentHitPairs(pickedSet, len) {
+    const out = [];
+    for (let i=0; i<len; i++) {
+      const a = i;
+      const b = (i+1) % len;
+      if (pickedSet.has(a) && pickedSet.has(b)) out.push([a,b]);
+    }
+    return out;
+  }
+
+  function weightedPickIndex(weights) {
+    let sum = 0;
+    for (const w of weights) sum += Math.max(0, w);
+    if (sum <= 0) return 0;
+    let r = Math.random() * sum;
+    for (let i=0; i<weights.length; i++){
+      r -= Math.max(0, weights[i]);
+      if (r <= 0) return i;
+    }
+    return weights.length - 1;
+  }
+
+  function enforceAtLeastOneHitPerChordRegion(pickedSet, len) {
+    const changes = (state.chordChangeTicks && state.chordChangeTicks.length)
+      ? Array.from(new Set(state.chordChangeTicks.filter(t => t >= 0 && t < LOOP_TICKS)))
+      : [0];
+
+    if (!changes.includes(0)) changes.push(0);
+    changes.sort((a,b)=>a-b);
+
+    const boundaries = changes.map(t => Math.floor((t * len) / LOOP_TICKS));
+    const uniqBounds = Array.from(new Set(boundaries)).sort((a,b)=>a-b);
+
+    if (!uniqBounds.includes(0)) uniqBounds.unshift(0);
+    if (!uniqBounds.includes(len)) uniqBounds.push(len);
+    else if (uniqBounds[uniqBounds.length-1] !== len) uniqBounds.push(len);
+
+    const forced = new Set();
+    for (let i=0; i<uniqBounds.length-1; i++){
+      const a = uniqBounds[i];
+      const b = uniqBounds[i+1];
+      if (b <= a) continue;
+
+      let has = false;
+      for (let p=a; p<b; p++){
+        if (pickedSet.has(p)) { has = true; break; }
+      }
+
+      if (!has) {
+        const forcedPos = a + Math.min(2, (b-a-1));
+        pickedSet.add(forcedPos);
+        forced.add(forcedPos);
+      } else {
+        for (let p=a; p<b; p++) {
+          if (pickedSet.has(p)) { forced.add(p); break; }
+        }
+      }
+    }
+    return forced;
+  }
+
+  // =========================================================
+  // Playback: chord-safe + repetition + legato
+  // =========================================================
+  function chordPitchClassSet() {
+    const chord = state.currentChordNotes || [];
+    const pcs = new Set();
+    for (const n of chord) pcs.add(((n|0) % 12 + 12) % 12);
+    return pcs;
+  }
+
+  function pickBassNote(roleChar, globalTick) {
+    const chord = state.currentChordNotes || [];
+    if (!chord.length) return null;
+
+    const rootAbs = (state.currentRootNote >= 0) ? state.currentRootNote : chord[0];
+    const chordPCs = chordPitchClassSet();
+
+    const in16 = globalTick % 16;
+    const strong = (in16 === 0 || in16 === 8 || in16 === 4 || in16 === 12);
+
+    const len = state.patternLen|0;
+    const p = (len > 0) ? (globalTick % len) : 0;
+    const rA = (state.randA && state.randA.length) ? (state.randA[p] ?? 0) : 0;
+    const rB = (state.randB && state.randB.length) ? (state.randB[p] ?? 0) : 0;
+    const rC = u32ToUnit(hashU32(state.patternSeed ^ 0xC001D00D, (globalTick|0) ^ (p<<16)));
+
+    const forceChord = !!state.needChordToneNext;
+
+    const root = shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI);
+
+    // Root anchoring: strong beats and role='R' bias toward root regardless of Distance.
+    const rootBias = strong ? 0.85 : ((roleChar === 'R') ? 0.70 : 0.55);
+    if (rA < rootBias) {
+      state.needChordToneNext = false;
+      updateRepeatMemory(root);
+      return root;
+    }
+
+    // --- Reuse bias (grounded, repetitive) ---
+    const prev = state.lastChosenBassNote;
+    if (!forceChord && prev != null) {
+      const prevPc = ((prev|0) % 12 + 12) % 12;
+      const prevKeySafe = chordPCs.has(prevPc) || (state.hasKey && state.currentScalePCSet && state.currentScalePCSet.has(prevPc));
+      if (prevKeySafe) {
+        const prob = (state.lastChosenRepeatCount < 2) ? REUSE_PROB_BEFORE_TWO : REUSE_PROB_AFTER_TWO;
+        if (rC < prob) {
+          state.lastChosenRepeatCount++;
+          return prev;
         }
       }
     }
 
-    updateModeStatus(); // update capture progress counter
-    updateDebug();
-  }
+    const chordCand = buildRegisterCandidatesFromPCSet(chordPCs, rootAbs);
+    const chordChoice = pickFromListDeterministic(chordCand, rB) ?? root;
 
-  // -----------------------
-  // highlight current grid step
-  // -----------------------
-  function highlightGridStep(step) {
-    if (!$grid.children.length) return;
-    for (let i=0; i<$grid.children.length; i++) {
-      const el = $grid.children[i];
-      el.style.outline = (i === step) ? '1px solid #6ee7ff' : 'none';
+    // Distance: controls the allowed pitch set.
+    // If key data is missing, force chord-only behavior (effectiveDistance = 0).
+    const effectiveDistance = (state.hasKey && state.currentScalePCSet && state.currentScalePCSet.size) ? (state.distance|0) : 0;
+
+    // User requirement: at Distance = 0, play ONLY the root note (Channel 2 root).
+    // (Fallback to chord[0] if root is missing.)
+    if (effectiveDistance === 0) {
+      state.needChordToneNext = false;
+      updateRepeatMemory(root);
+      return root;
     }
+
+    const pScale = clamp(effectiveDistance / 100, 0, 1);
+
+    let chosen = chordChoice;
+    if (!forceChord && pScale > 0) {
+      const useScale = (rA >= rootBias) && (rA < (rootBias + (1 - rootBias) * pScale));
+      if (useScale && state.currentScalePCSet) {
+        const scaleCand = buildRegisterCandidatesFromPCSet(state.currentScalePCSet, rootAbs);
+        const scaleChoice = pickFromListDeterministic(scaleCand, rB);
+        if (scaleChoice != null) chosen = scaleChoice;
+      }
+    }
+
+    const chosenPc = ((chosen % 12) + 12) % 12;
+    if (!chordPCs.has(chosenPc)) {
+      if (!(state.hasKey && state.currentScalePCSet && state.currentScalePCSet.has(chosenPc))) {
+        chosen = root;
+      }
+    }
+
+    if (forceChord) state.needChordToneNext = false;
+    updateRepeatMemory(chosen);
+    return chosen;
   }
 
-  // -----------------------
-  // UI / Status / Debug
-  // -----------------------
-  function updateStatuses() {
-    $tickStatus.textContent = lastTicker ? `Ticker: bpm=${lastTicker.bpm ?? '—'} count=${lastTicker.count}` : 'Ticker: waiting…';
-    $inStatus.textContent  = midiIn  ? `In: ${midiIn.name} (Ch1)` : 'In: not selected';
-    $outStatus.textContent = midiOut ? `Out: ${midiOut.name} (Ch4)` : 'Out: not selected';
-  }
-
-  function updateModeStatus() {
-    if (mode === MODE.CAPTURING) {
-      const n = captureProgressTicks();
-      $modeStatus.textContent = `Mode: Capturing (${n}/128 ticks)`;
+  function updateRepeatMemory(chosen) {
+    if (state.lastChosenBassNote === chosen) {
+      state.lastChosenRepeatCount++;
     } else {
-      $modeStatus.textContent = 'Mode: Frozen';
+      state.lastChosenBassNote = chosen;
+      state.lastChosenRepeatCount = 1;
     }
   }
 
-  function updateOrnamentStatus() {
-    $ornStatus.textContent = ornamentEnabled ? 'Ornament: Enabled' : 'Ornament: Disabled';
+  function buildRegisterCandidatesFromPCSet(pcSet, rootAbs) {
+    const pcs = Array.from(pcSet || []);
+    if (!pcs.length) return [shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI)];
+    const out = [];
+
+    const rootPc = ((rootAbs|0) % 12 + 12) % 12;
+    for (const pc of pcs) {
+      const delta = ((pc - rootPc) + 12) % 12;
+      const base = shiftIntoBassRegister((rootAbs|0) + delta, BASS_LO, BASS_HI);
+      for (let n = base; n >= BASS_LO; n -= 12) if ((((n%12)+12)%12) === pc) out.push(n);
+      for (let n = base + 12; n <= BASS_HI; n += 12) if ((((n%12)+12)%12) === pc) out.push(n);
+    }
+
+    const uniq = Array.from(new Set(out)).sort((a,b)=>a-b);
+    return uniq.length ? uniq : [shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI)];
   }
 
-  function updateDebug() {
-    const dbg = {
-      mode,
-      captureProgress: (mode === MODE.CAPTURING) ? `${captureProgressTicks()}/128` : '—',
-      frozenAtISO: capFrozenAtISO,
-      patternBeats, patternTicks,
-      ornamentEnabled,
-      lastOrnamentAtAbsTick,
-      hitMap,
-      capturedPitches,
-      heldNotes: [...heldNotes].sort((a,b)=>a-b),
-      currentChord: { notes: currentChord.notes, pcs: [...currentChord.pcs] },
-      absTick, loopIndex, lastCount
-    };
-    $debug.textContent = JSON.stringify(dbg, null, 2);
+  function pickFromListDeterministic(list, r) {
+    if (!list || !list.length) return null;
+    const idx = Math.min(list.length - 1, Math.max(0, Math.floor(clamp(r,0,0.999999) * list.length)));
+    return list[idx];
   }
 
-  // -----------------------
-  // Boot & Controls
-  // -----------------------
-  document.getElementById('regenBtn').addEventListener('click', () => {
-    regenPattern();
-    updateOrnamentStatus();
-  });
+  function shiftIntoBassRegister(note, lo, hi) {
+    let n = note|0;
+    while (n > hi) n -= 12;
+    while (n < lo) n += 12;
+    if (n < 0) n = 0;
+    if (n > 127) n = 127;
+    return n;
+  }
 
-  // Init
-  regenPattern();
-  initMIDI();
+  function densityThreshold() {
+    return clamp((state.density|0) / 100, 0, 1);
+  }
+
+  function shouldPlayAtPos(pos) {
+    const len = state.patternLen|0;
+    if (len <= 0) return false;
+    const p = ((pos|0) % len + len) % len;
+    if (state.forcedHits && state.forcedHits.has(p)) return true;
+    const lvl = (state.hitLevel && state.hitLevel.length) ? state.hitLevel[p] : null;
+    if (lvl == null) return false;
+    return lvl <= densityThreshold();
+  }
+
+  function ticksUntilNextHit(fromPos, len) {
+    for (let i=1; i<=len; i++) {
+      const p = (fromPos + i) % len;
+      if (shouldPlayAtPos(p)) return i;
+    }
+    return len;
+  }
+
+  function legatoFactor() {
+    const v = clamp((state.legato|0) / 100, 0, 1);
+    return LEGATO_FACTOR_MIN + (LEGATO_FACTOR_MAX - LEGATO_FACTOR_MIN) * v;
+  }
+
+  function scheduleLegatoNoteOff(note, fromPos, len) {
+    if (state.activeBassOffTimer) {
+      clearTimeout(state.activeBassOffTimer);
+      state.activeBassOffTimer = null;
+    }
+    const dticks = ticksUntilNextHit(fromPos, len);
+    const ms = clamp(tickMs() * dticks * legatoFactor(), NOTE_MS_MIN, NOTE_MS_MAX);
+
+    state.activeBassOffTimer = setTimeout(() => {
+      if (state.activeBassNote === note) {
+        MIDI.noteOff(note, BASS_MIDI_CH);
+        state.activeBassNote = null;
+      } else {
+        MIDI.noteOff(note, BASS_MIDI_CH);
+      }
+    }, ms);
+  }
+
+  function playPatternTick(globalTick) {
+    const len = state.patternLen|0;
+    if (!len) return;
+    const p = globalTick % len;
+
+    if (!shouldPlayAtPos(p)) return;
+
+    const roleChar = (state.roleMask && state.roleMask.length) ? (state.roleMask[p] || 'R') : 'R';
+    const note = pickBassNote(roleChar, globalTick);
+    if (note == null) return;
+
+    const prev = state.activeBassNote;
+
+    if (prev == null) {
+      MIDI.noteOn(note, 96, BASS_MIDI_CH);
+      state.activeBassNote = note;
+      scheduleLegatoNoteOff(note, p, len);
+      el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} role=${roleChar} note=${note} (new)`;
+      return;
+    }
+
+    if (prev === note) {
+      scheduleLegatoNoteOff(note, p, len);
+      el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} role=${roleChar} note=${note} (held)`;
+      return;
+    }
+
+    MIDI.noteOn(note, 96, BASS_MIDI_CH);
+    state.activeBassNote = note;
+
+    setTimeout(() => {
+      MIDI.noteOff(prev, BASS_MIDI_CH);
+    }, 10);
+
+    scheduleLegatoNoteOff(note, p, len);
+
+    el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} role=${roleChar} note=${note} (chg from ${prev})`;
+  }
+
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  // =========================================================
+  // UI + rendering
+  // =========================================================
+  function renderTickUI(t) {
+    el.tickOut.textContent = String(t);
+    el.bpmOut.textContent = String(Math.round(state.bpm || 120));
+    el.subdivOut.textContent = String(state.subdiv || 4);
+    el.lastChordTickOut.textContent = (state.lastChordChangeTick == null) ? '—' : String(state.lastChordChangeTick);
+  }
+
+  function renderChordUI() {
+    el.chordOut.textContent = JSON.stringify(state.currentChordNotes || []);
+    el.rootOut.textContent = (state.currentRootNote >= 0) ? String(state.currentRootNote) : '—';
+  }
+
+  function setChordSource(mode) {
+    state.chordSource = mode;
+    el.srcModeOut.textContent = (mode === 'bc') ? 'BroadcastChannel' : 'MIDI In';
+    if (mode === 'midi') commitChordUpdate();
+  }
+
+  function panic(reason='panic') {
+    if (state.activeBassOffTimer) { clearTimeout(state.activeBassOffTimer); state.activeBassOffTimer = null; }
+    if (state.activeBassNote != null) {
+      MIDI.noteOff(state.activeBassNote, BASS_MIDI_CH);
+      state.activeBassNote = null;
+    }
+    MIDI.allNotesOff();
+    el.noteDebug.textContent = `— (${reason})`;
+  }
+
+  function bindUI() {
+    el.midiIn.addEventListener('change', (e) => MIDI.selectInById(e.target.value));
+    el.midiOut.addEventListener('change', (e) => MIDI.selectOutById(e.target.value));
+    el.genBtn.addEventListener('click', generateBassline);
+    el.panicBtn.addEventListener('click', () => panic('panic'));
+
+    const setReadout = (node, v) => { if (node) node.textContent = String(v|0); };
+
+    el.legatoSlider.addEventListener('input', (e) => {
+      state.legato = clamp(e.target.value|0, 0, 100);
+      setReadout(el.legatoVal, state.legato);
+    });
+    el.distanceSlider.addEventListener('input', (e) => {
+      state.distance = clamp(e.target.value|0, 0, 100);
+      setReadout(el.distanceVal, state.distance);
+    });
+    el.densitySlider.addEventListener('input', (e) => {
+      state.density = clamp(e.target.value|0, 0, 100);
+      setReadout(el.densityVal, state.density);
+      el.densityOut.textContent = String(state.density|0);
+    });
+
+    el.toggleSrcBtn.addEventListener('click', () => {
+      setChordSource(state.chordSource === 'midi' ? 'bc' : 'midi');
+    });
+  }
+
+  function startSilenceGuard() {
+    setInterval(() => {
+      const now = performance.now();
+      if (state.lastTickAtMs > 0 && (now - state.lastTickAtMs) > Math.max(300, tickMs() * 6)) {
+        state.lastTickAtMs = 0;
+        panic('ticks stopped');
+      }
+    }, 120);
+  }
+
+  // =========================================================
+  // Deterministic helpers (u32 hashing)
+  // =========================================================
+  function hashU32(seed, x) {
+    let h = (seed ^ x) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h >>> 0;
+  }
+  function u32ToUnit(u) {
+    return (u >>> 0) / 4294967296;
+  }
+
+  // =========================================================
+  // Boot
+  // =========================================================
+  function boot() {
+    bindUI();
+    initTicker();
+    initChordBC();
+    startSilenceGuard();
+    initKeyBC();
+    MIDI.init();
+
+    el.patLenOut.textContent = '—';
+    el.densityOut.textContent = String(state.density|0);
+    if (el.legatoSlider) el.legatoSlider.value = String(state.legato|0);
+    if (el.distanceSlider) el.distanceSlider.value = String(state.distance|0);
+    if (el.densitySlider) el.densitySlider.value = String(state.density|0);
+    if (el.legatoVal) el.legatoVal.textContent = String(state.legato|0);
+    if (el.distanceVal) el.distanceVal.textContent = String(state.distance|0);
+    if (el.densityVal) el.densityVal.textContent = String(state.density|0);
+    renderTickUI(0);
+    renderChordUI();
+
+    setChordSource('midi');
+  }
+
+  window.addEventListener('load', boot);
 })();
 </script>
-<script src="iframe-autosize-child.js"></script>
 </body>
 </html>
