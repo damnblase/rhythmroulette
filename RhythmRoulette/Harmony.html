@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ProgLooper — External-Ticker MIDI Chord Player (Minor Only + Jitter)</title>
+  <style>
+    :root { --bg:#0b0d10; --panel:#12161b; --muted:#7a8a99; --fg:#e8f0f7; --accent:#57b2ff; --accent2:#8ef; }
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px;display:grid;gap:16px;}
+    h1{font: size 14px;px;margin:0 0 6px;color:#cfe6ff}
+    .grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+    .card{background:var(--panel);border:1px solid #182029;border-radius:14px;padding:14px 16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    label{font-size:14px;color:var(--muted)}
+    select,button,input[type="checkbox"],input[type="number"]{background:#0e1318;color:var(--fg);border:1px solid #2a3642;border-radius:10px;padding:10px 12px;font-size:14px}
+    input[type="number"]{width:90px}
+    button{cursor:pointer}
+    button.primary{background:linear-gradient(180deg,#2a7bd9,#1769c2);border-color:#1a5fb8}
+    button.ghost{background:#0e1318}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0e1318;border:1px solid #22313e;color:#b9d6f8;font-size:12px}
+    .muted{color:var(--muted)}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+    .big{font-size:14px; letter-spacing:.2px}
+    .stack{display:flex;flex-direction:column;gap:10px}
+    .divider{height:1px;background:#1d2731;margin:8px 0}
+    .flex-1{flex:1}
+    .nowrap{white-space:nowrap}
+    .progression{font-size:14px}
+    .statusline{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+    .statuscell{background:#0e1318;border:1px solid #1f2b36;border-radius:10px;padding:8px 10px}
+
+    /* =========================================================
+       Minimal UI override (presentation-only)
+       Keep visible controls:
+       - #randProg, #randKey, #keySelect, #keySource
+       - #add7, #add9 (labeled "7" and "9")
+       - #loopLen
+       - #enableJitter, #jitterMax
+       - #randGroove
+       - #midiOut
+       - #progLabel (current chord progression display)
+       Everything else hidden.
+       ========================================================= */
+
+    html, body {
+      background: #ffffff !important;
+      color: #000000 !important;
+    }
+
+    .wrap{
+      max-width: 100% !important;
+      padding: 18px !important;
+      gap: 10px !important;
+    }
+
+    header { display: none !important; }
+    .grid{ grid-template-columns: 1fr !important; gap: 0 !important; }
+
+    /* Remove card styling / layout clutter */
+    .card{
+      background: transparent !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+    }
+
+    /* Hide the entire debug/status card (second card) */
+    .grid > .card.stack:nth-child(2){ display:none !important; }
+
+    /* Hide dividers */
+    .divider{ display:none !important; }
+
+    /* Hide labels by default */
+    label{ display:none !important; }
+
+    /* Minimal layout rows */
+    .row{
+      gap: 10px !important;
+      flex-wrap: wrap !important;
+      align-items: center !important;
+    }
+
+    /* Make controls clean on white */
+    select,button,input[type="checkbox"],input[type="number"]{
+      background:#ffffff !important;
+      color:#000000 !important;
+      border:1px solid #000000 !important;
+      border-radius:10px !important;
+      padding:10px 12px !important;
+      font-size:14px !important;
+      box-shadow:none !important;
+      appearance: auto;
+    }
+    button.primary{
+      background:#ffffff !important;
+      border-color:#000000 !important;
+    }
+    button.ghost{
+      background:#ffffff !important;
+    }
+
+    /* Hide all non-essential UI elements */
+    #panic,
+    #midiStatus,
+    #keyExtStatus,
+    #loopInfo,
+    #jitterInfo,
+    #placementInfo,
+    #nowPlaying,
+    .pill,
+    .muted,
+    .statusline,
+    .statuscell {
+      display:none !important;
+    }
+
+    /* Keep progression visible and clean */
+    #progLabel{
+      display:block !important;
+      color:#000000 !important;
+      font-size:14px !important;
+      line-height:1.25 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      flex: 1 1 auto !important;
+      min-width: 220px;
+    }
+
+    /* Checkbox containers where we want to keep inputs but hide text (used for jitter) */
+    label.keepLabel{
+      display:inline-flex !important;
+      align-items:center !important;
+      gap:0 !important;
+      font-size:0 !important;       /* hides label text */
+      color:transparent !important;
+      white-space:nowrap !important;
+    }
+    label.keepLabel input[type="checkbox"]{
+      margin:0 !important;
+    }
+    label.keepLabel input[type="number"]{
+      margin:0 !important;
+    }
+
+    /* Checkbox labels that must be visible as "7" and "9" */
+    label.keepCheckboxLabel{
+      display:inline-flex !important;
+      align-items:center !important;
+      gap:10px !important;
+      font-size:14px !important;
+      color:#000000 !important;
+      white-space:nowrap !important;
+    }
+    label.keepCheckboxLabel input[type="checkbox"]{
+      margin:0 !important;
+    }
+
+    /* Show only the MIDI Output text label */
+    label.keepTextLabel{
+      display:inline-flex !important;
+      align-items:center !important;
+      gap:10px !important;
+      font-size:14px !important;
+      color:#000000 !important;
+      white-space:nowrap !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>ProgLooper — External-Ticker MIDI Chord Player</h1>
+      <div class="muted">Minor-only harmony • Subscribes to <span class="mono">BroadcastChannel('internal-ticker')</span> • External: 32 beats (128 ticks) • Internal loop: <b>4 / 8 / 16 / 32</b> beats • Legato • Auto-silence on stop • <b>Inner-chord start jitter (quantized)</b></div>
+    </header>
+
+    <section class="grid">
+      <div class="card stack">
+        <div class="row">
+          <label class="keepTextLabel">MIDI Output</label>
+          <select id="midiOut" aria-label="MIDI Output"></select>
+          <button id="panic" class="ghost">Panic (All Notes Off)</button>
+          <span id="midiStatus" class="pill">MIDI: —</span>
+          <span class="pill">Ch 1 • Vel 96</span>
+        </div>
+        <div class="divider"></div>
+        <div class="row">
+          <button id="randProg" class="primary">Randomize Progression</button>
+          <div class="flex-1 progression mono" id="progLabel"></div>
+        </div>
+        <div class="row">
+          <button id="randKey" class="ghost">Randomize Key</button>
+          <label class="nowrap">Key (Minor only)</label>
+          <select id="keySelect"></select>
+          <label class="nowrap">Source</label>
+          <select id="keySource">
+          <option value="manual">Manual</option>
+          <option value="external">External</option>
+          </select>
+          <span class="pill" id="keyExtStatus" style="display:none">EXT</span>
+
+          <label class="nowrap keepCheckboxLabel"><input type="checkbox" id="add7"> 7</label>
+          <label class="nowrap keepCheckboxLabel"><input type="checkbox" id="add9" disabled> 9</label>
+        </div>
+        <div class="row">
+          <label class="nowrap">Loop Length</label>
+          <select id="loopLen">
+            <option value="4">4 beats</option>
+            <option value="8">8 beats</option>
+            <option value="16">16 beats</option>
+            <option value="32">32 beats</option>
+          </select>
+          <span class="pill" id="loopInfo">—</span>
+        </div>
+        <div class="row">
+          <label class="nowrap keepLabel"><input type="checkbox" id="enableJitter" checked> Enable Jitter</label>
+          <label class="nowrap keepLabel">Max Jitter (ticks): <input type="number" id="jitterMax" min="0" max="8" step="1" value="4"></label>
+          <button id="randGroove" class="ghost">Randomize Groove</button>
+          <span class="pill" id="jitterInfo">Jitter: ON ±4</span>
+          <span class="pill" id="placementInfo">Placement: 16ths</span>
+        </div>
+        <div class="divider"></div>
+        <div class="row"><div class="big" id="nowPlaying">—</div></div>
+      </div>
+
+      <div class="card stack">
+        <div class="statusline">
+          <div class="statuscell"><div class="muted">count (0–127)</div><div id="st_count" class="mono">—</div></div>
+          <div class="statuscell"><div class="muted">loopBeat ext (0–31)</div><div id="st_beat" class="mono">—</div></div>
+          <div class="statuscell"><div class="muted">internalBeat</div><div id="st_iBeat" class="mono">—</div></div>
+          <div class="statuscell"><div class="muted">internalTick</div><div id="st_iTick" class="mono">—</div></div>
+          <div class="statuscell"><div class="muted">loopLen</div><div id="st_loopLen" class="mono">—</div></div>
+          <div class="statuscell"><div class="muted">bpm</div><div id="st_bpm" class="mono">—</div></div>
+          <div class="statuscell"><div class="muted">Δ (debug)</div><div id="st_deltas" class="mono">—</div></div>
+        </div>
+        <div class="row">
+          <div class="muted">Chord 1 always starts at tick 0; last chord always ends at loop end. Inner chords can start ±J ticks from their ideal positions, quantized to ticks, never overlapping. Above 130 BPM, inner chord starts are constrained to 8th-note grid (downbeat & upbeat only).</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+<script>
+(() => {
+  // -------------------- User-specified minor-only progression library --------------------
+  const PROGRESSIONS = [
+    ["i","iv"], ["i","v"], ["iv","v"], ["v","iv"],
+    ["i","iv","v"], ["i","v","iv"], ["iv","i","v"], ["iv","v","i"], ["v","i","iv"], ["v","iv","i"],
+    ["i","iv","v","i"], ["i","v","iv","i"], ["iv","i","v","iv"], ["v","i","iv","v"], ["i","iv","i","v"], ["iv","v","iv","i"], ["v","iv","v","i"],
+  ];
+
+// -------------------- Key & Harmony (MAJOR + MINOR) --------------------
+const KEYS = (() => {
+  const names = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+  const semis = { C:0, "C#":1, Db:1, D:2, Eb:3, E:4, F:5, "F#":6, Gb:6, G:7, Ab:8, A:9, Bb:10, B:11 };
+  
+  // intervalles pour les modes
+  const naturalMinor = [0,2,3,5,7,8,10]; // tonique, 2, b3, 4, 5, b6, b7
+  const naturalMajor = [0,2,4,5,7,9,11]; // tonique, 2, 3, 4, 5, 6, 7
+
+  const records = [];
+  for (const n of names) {
+    // minor key
+    records.push({ 
+      name:`${n} Minor`, 
+      tonicName:n, 
+      tonic:semis[n], 
+      mode:'minor', 
+      scale:naturalMinor 
+    });
+    // major key
+    records.push({ 
+      name:`${n} Major`, 
+      tonicName:n, 
+      tonic:semis[n], 
+      mode:'major', 
+      scale:naturalMajor 
+    });
+  }
+  return records;
+})();
+
+// pick random helper
+function pickRandom(arr){ 
+  const i = Math.floor(Math.random()*arr.length); 
+  return arr[i]; 
+}
+
+// random int helper
+function randInt(min,max){ 
+  return Math.floor(Math.random()*(max-min+1))+min; 
+}
+
+// -------------------- Parsing Roman numerals --------------------
+function parseRomanToken(tok){
+  tok = tok.replace(/b/g,"♭").replace(/#/g,"#");
+  let acc = 0;
+  while (tok.startsWith("♭") || tok.startsWith("#")) {
+    if (tok.startsWith("♭")) { acc -= 1; tok = tok.slice(1); }
+    else if (tok.startsWith("#")) { acc += 1; tok = tok.slice(1); }
+  }
+  let diminished = tok.includes("°");
+  let augmented = tok.includes("+");
+  tok = tok.replace(/[°+]/g,"");
+  const ROM = { I:1, II:2, III:3, IV:4, V:5, VI:6, VII:7 };
+  const upper = tok.toUpperCase();
+  const deg = ROM[upper] || 1;
+  const isUpper = tok === upper;
+  const quality = augmented ? 'aug' : diminished ? 'dim' : (isUpper ? 'maj' : 'min');
+  return { degree:deg, acc, quality, raw:tok, isUpper };
+}
+
+// -------------------- Build Chord MIDI --------------------
+function buildChordMidi(token, key, add7=false, add9=false){
+  const t = parseRomanToken(token);
+  const scale = key.scale; // tableau de 7 notes pour le mode
+  const degIndex = (t.degree - 1) % 7;
+  let rootPC = (key.tonic + scale[degIndex] + t.acc) % 12;
+  if (rootPC < 0) rootPC += 12;
+
+  // Triade basée sur l'échelle
+  const thirdIndex = (degIndex + 2) % 7;
+  const fifthIndex = (degIndex + 4) % 7;
+  let triad = [
+    rootPC,
+    (key.tonic + scale[thirdIndex] + t.acc) % 12,
+    (key.tonic + scale[fifthIndex] + t.acc) % 12
+  ];
+
+  // Ajuster les intervalles pour les altérations (dim/aug)
+  if (t.quality === 'dim') triad[2] = (triad[0] + 6) % 12;
+  if (t.quality === 'aug') triad[2] = (triad[0] + 8) % 12;
+
+  // Ajouter 7 et 9 si demandé
+  let tones = triad.slice();
+  if (add7) {
+    let seventh;
+    if (t.quality === 'dim') seventh = (triad[0]+10)%12;
+    else if (t.isUpper && t.degree===5 && t.acc===0) seventh = (triad[0]+10)%12;
+    else if (t.quality==='min') seventh = (triad[0]+10)%12;
+    else seventh = (triad[0]+11)%12;
+    tones.push(seventh);
+    if (add9) tones.push((triad[0]+14)%12);
+  }
+
+  // Convertir en notes MIDI dans la plage
+  const rootBase = nearestInRange(rootPC, 50, 60);
+  let notes = tones.map(n => rootBase + ((n - rootPC + 12) % 12));
+
+  // Ajuster si hors limites
+  let maxN = Math.max(...notes), minN = Math.min(...notes);
+  if (maxN > 84) notes = notes.map(n => n-12);
+  if (minN < 45) notes = notes.map(n => n+12);
+
+  const seen = new Set();
+  notes = notes.filter(n => { const pc = (n%12+12)%12; if (seen.has(pc)) return false; seen.add(pc); return true; });
+
+  return notes;
+}
+
+
+// -------------------- Helpers --------------------
+function nearestInRange(pc, lo, hi){
+  let best = lo - ((lo - pc) % 12);
+  while (best < lo) best += 12;
+  while (best > hi) best -= 12;
+  if (best < lo) best += 12;
+  if (best > hi) best -= 12;
+  return best;
+}
+
+function pcToNearestMidi(pc, lo=54, hi=66){ 
+  return nearestInRange(pc, lo, hi); 
+}
+
+
+  // -------------------- Boundaries (internal ticks with jitter) --------------------
+  function baseTickBoundariesFor(N, loopBeats){
+    const totalTicks = 4*loopBeats;
+    const b = [];
+    for (let k=0;k<=N;k++) b.push(Math.round(k*totalTicks/N));
+    return b;
+  }
+
+  function applyJitter(baseB, maxJ){
+    const N = baseB.length-1;
+    const total = baseB[N];
+    const Bp = baseB.slice();
+    if (maxJ <= 0 || N <= 1) return Bp;
+
+    for (let k=1;k<=N-1;k++){
+      const d = randInt(-maxJ, maxJ);
+      Bp[k] = baseB[k] + d;
+    }
+
+    Bp[0] = 0; Bp[N] = total;
+    for (let k=1;k<=N-1;k++){
+      const lo = Bp[k-1] + 1;
+      const hi = Math.min(baseB[k] + maxJ, Bp[k+1] ?? (total)) - 1;
+      if (Bp[k] < lo) Bp[k] = lo;
+      if (Bp[k] > hi) Bp[k] = hi;
+    }
+    for (let k=N-1;k>=1;k--){
+      const hi = Bp[k+1] - 1;
+      if (Bp[k] > hi) Bp[k] = hi;
+      const lo = Bp[k-1] + 1;
+      if (Bp[k] < lo) Bp[k] = lo;
+    }
+    return Bp;
+  }
+
+  function snapInnerToEighths(bounds){
+    const S = bounds.slice();
+    const N = S.length - 1;
+    if (N <= 1) return S;
+
+    for (let k=1; k<=N-1; k++){
+      let lo = S[k-1] + 1;
+      let hi = S[k+1] - 1;
+      let t  = Math.round(S[k] / 2) * 2;
+
+      if (t < lo) t = lo;
+      if (t > hi) t = hi;
+
+      if (t % 2 !== 0){
+        if (t + 1 <= hi) t = t + 1;
+        else if (t - 1 >= lo) t = t - 1;
+      }
+      S[k] = t;
+    }
+
+    for (let k=N-1; k>=1; k--){
+      if (S[k] >= S[k+1]) S[k] = S[k+1] - 1;
+      if (S[k] % 2 !== 0){
+        if (S[k] - 1 > S[k-1]) S[k] = S[k] - 1;
+        else S[k] = S[k] + 1;
+      }
+    }
+    return S;
+  }
+
+  function chordIndexForTick(itick, boundsTicks){
+    for (let k=0;k<boundsTicks.length-1;k++){
+      if (itick >= boundsTicks[k] && itick < boundsTicks[k+1]) return k;
+    }
+    return boundsTicks.length-2;
+  }
+
+  // -------------------- MIDI --------------------
+  const MIDI = {
+    access:null, out:null, channel:0, noteOnVel:96,
+    async init(){
+      try{
+        this.access = await navigator.requestMIDIAccess({ sysex:false });
+        this.refreshOutputs();
+        document.getElementById('midiStatus').textContent = 'MIDI: ready';
+        this.access.onstatechange = ()=> this.refreshOutputs();
+      }catch(err){
+        document.getElementById('midiStatus').textContent = 'MIDI unavailable';
+        console.warn('WebMIDI not available', err);
+      }
+    },
+    refreshOutputs(){
+      const sel = document.getElementById('midiOut');
+      const oldId = sel.value;
+      sel.innerHTML = '';
+      const outs = this.outputs();
+      outs.forEach(o=>{
+        const opt=document.createElement('option');
+        opt.value=o.id; opt.textContent=o.name; sel.appendChild(opt);
+      });
+      if (outs.length===0){
+        const opt=document.createElement('option'); opt.value=''; opt.textContent='(no outputs)'; sel.appendChild(opt);
+        this.out=null;
+      } else {
+        const pick = outs.find(o=>o.id===oldId) || outs[0];
+        sel.value = pick.id;
+        this.out = pick;
+      }
+    },
+    outputs(){
+      if (!this.access) return [];
+      return Array.from(this.access.outputs.values());
+    },
+    selectById(id){
+      const outs = this.outputs();
+      this.out = outs.find(o=>o.id===id) || null;
+    },
+    send(bytes){ if (this.out) this.out.send(bytes); },
+    noteOn(note){ this.send([0x90 + this.channel, note & 0x7F, this.noteOnVel]); },
+    noteOff(note){ this.send([0x80 + this.channel, note & 0x7F, 0]); },
+    // keep generic helpers (used for Ch.2 root); DO NOT call with ch=2 (Ch.3) anywhere.
+    noteOnCh(note, ch){ this.send([0x90 + (ch & 0x0F), note & 0x7F, this.noteOnVel]); },
+    noteOffCh(note, ch){ this.send([0x80 + (ch & 0x0F), note & 0x7F, 0]); },
+    allNotesOff(){
+      for (let ch=0; ch<16; ch++) if (this.out) this.out.send([0xB0+ch,123,0]);
+      if (this.out){ for (let n=0;n<128;n++){ this.out.send([0x80+this.channel,n,0]); } }
+    }
+  };
+
+  // -------------------- App State --------------------
+  const LOOP_CHOICES = [4,8,16,32];
+  const state = {
+    progression: pickRandom(PROGRESSIONS),
+    keySource: 'manual',
+    key: null,
+    add7: false,
+    add9: false,
+    loopBeats: pickRandom(LOOP_CHOICES),
+    boundsTicks: [],
+    baseBoundsTicks: [],
+    jitterEnabled: true,
+    jitterMax: 4,
+    jitterDeltas: [],
+    currentChordIndex: -1,
+    currentNotes: [],           // Ch.1 notes
+    // (CH3 MIRROR REMOVED) currentNotesCh3: [],
+    currentRootCh2: -1,         // Ch.2 root note
+    pending: { progression:null, key:null, loopBeats:null, rejitter:false, jitterEnabled:null, jitterMax:null },
+    lastTick:-1,
+    silenceTimer:null,
+    bpm: 120,
+    hiSpeed: false,
+  };
+
+  // Default key: C Minor
+  state.key = KEYS.find(k => k.tonicName === 'C' && k.mode === 'minor') || pickRandom(KEYS);
+
+  recomputeBoundariesAndJitter(true);
+// ------------------- Key ws ---------------
+  let keyWS = null;
+
+function startKeyWS(){
+  if (keyWS) return;
+
+  keyWS = new WebSocket('ws://localhost:8081');
+
+  keyWS.onopen = () => {
+    console.log('[KEY WS] connected');
+    document.getElementById('keyExtStatus').style.display = 'inline-block';
+  };
+
+keyWS.onmessage = (ev) => {
+  if (state.keySource !== 'external') return;
+
+  try {
+    const msg = JSON.parse(ev.data);
+
+    if (msg.type === 'key') {
+      let k = null;
+
+      // on cherche par tonique (PC ou nom)
+      if (typeof msg.tonicPc === 'number') {
+        k = KEYS.find(x => x.tonic === msg.tonicPc && x.mode === (msg.mode || x.mode));
+      } else if (typeof msg.tonic === 'string') {
+        k = KEYS.find(x => x.tonicName === msg.tonic && x.mode === (msg.mode || x.mode));
+      }
+
+      if (k) {
+        state.pending.key = k;
+
+        // Optionnel : log pour vérifier
+        console.log('[KEY WS] Key updated:', k.name);
+      }
+    }
+  } catch (e) {
+    console.warn('[KEY WS] invalid message', ev.data);
+  }
+};
+
+
+
+  keyWS.onclose = () => {
+    console.log('[KEY WS] closed');
+    keyWS = null;
+    document.getElementById('keyExtStatus').style.display = 'none';
+  };
+
+  keyWS.onerror = (e) => {
+    console.warn('[KEY WS] error', e);
+  };
+}
+
+function stopKeyWS(){
+  if (keyWS){
+    keyWS.close();
+    keyWS = null;
+  }
+  document.getElementById('keyExtStatus').style.display = 'none';
+}
+
+
+
+  // -------------------- KEY BROADCAST --------------------petit hack pour le mode
+const keyBC = new BroadcastChannel('music-key');
+
+function publishKey(k){
+  if (!k) return;
+
+  // hack minimal : déduire le mode depuis le nom
+  const mode = /major/i.test(k.name) ? 'major' : 'minor';
+
+  const msg = {
+    type: 'key',
+    tonic: k.tonicName,
+    mode,                  // ← maintenant vrai
+    tonicPc: k.tonic,
+    tonicMidi: pcToNearestMidi(k.tonic, 54, 66)
+  };
+
+  try {
+    keyBC.postMessage(msg);
+  } catch(e){
+    console.warn('music-key postMessage failed', e);
+  }
+}
+
+  function silenceAll(reason='silence'){
+    // turn off existing Ch.1 notes
+    for (const n of state.currentNotes) MIDI.noteOff(n);
+    // (CH3 OFF) no Channel 3 note-offs here
+    if (state.currentRootCh2 >= 0) MIDI.noteOffCh(state.currentRootCh2, 1); // Ch.2
+    MIDI.allNotesOff(); // global safety, allowed by acceptance criteria
+
+    state.currentNotes = [];
+    // (CH3 OFF) state.currentNotesCh3 = [];
+    state.currentRootCh2 = -1;
+    state.currentChordIndex = -1;
+    if (state.silenceTimer) { clearTimeout(state.silenceTimer); state.silenceTimer=null; }
+    document.getElementById('nowPlaying').textContent = `— (${reason})`;
+  }
+
+  function scheduleSilenceGuard(tickMs){
+    const minDelay = 150;
+    const maxDelay = 1200;
+    const delay = Math.min(Math.max((tickMs||120) * 2.5, minDelay), maxDelay);
+    if (state.silenceTimer) clearTimeout(state.silenceTimer);
+    state.silenceTimer = setTimeout(()=> silenceAll('transport stopped'), delay);
+  }
+
+  // -------------------- UI wiring --------------------
+  const el = {
+    midiOut: document.getElementById('midiOut'),
+    panic: document.getElementById('panic'),
+    randProg: document.getElementById('randProg'),
+    randKey: document.getElementById('randKey'),
+    keySelect: document.getElementById('keySelect'),
+    add7: document.getElementById('add7'),
+    add9: document.getElementById('add9'),
+    progLabel: document.getElementById('progLabel'),
+    nowPlaying: document.getElementById('nowPlaying'),
+    st_count: document.getElementById('st_count'),
+    st_beat: document.getElementById('st_beat'),
+    st_iBeat: document.getElementById('st_iBeat'),
+    st_iTick: document.getElementById('st_iTick'),
+    st_loopLen: document.getElementById('st_loopLen'),
+    st_bpm: document.getElementById('st_bpm'),
+    st_deltas: document.getElementById('st_deltas'),
+    loopLen: document.getElementById('loopLen'),
+    loopInfo: document.getElementById('loopInfo'),
+    enableJitter: document.getElementById('enableJitter'),
+    jitterMax: document.getElementById('jitterMax'),
+    jitterInfo: document.getElementById('jitterInfo'),
+    randGroove: document.getElementById('randGroove'),
+    placementInfo: document.getElementById('placementInfo'),
+  };
+
+  function refreshKeySelect(){
+    el.keySelect.innerHTML='';
+    KEYS.forEach((k,idx)=>{
+      const o=document.createElement('option'); o.value=idx; o.textContent=k.name; el.keySelect.appendChild(o);
+    });
+    el.keySelect.value = KEYS.indexOf(state.key);
+  }
+  function fmtProg(p){ return p.join(' – '); }
+  function refreshProgLabel(){ el.progLabel.textContent = `[ ${fmtProg(state.progression)} ]  (${state.progression.length} chords)`; }
+  function refreshLoopUI(){
+    el.loopLen.value = String(state.loopBeats);
+    el.st_loopLen.textContent = state.loopBeats;
+    const per = (state.loopBeats / state.progression.length).toFixed(2);
+    el.loopInfo.textContent = `${state.loopBeats} beats • ~${per} beats/chord`;
+  }
+  function refreshJitterUI(){
+    el.enableJitter.checked = state.jitterEnabled;
+    el.jitterMax.value = state.jitterMax;
+    el.jitterInfo.textContent = `Jitter: ${state.jitterEnabled ? 'ON' : 'OFF'} ${state.jitterEnabled ? `±${state.jitterMax}` : ''}`;
+    el.st_deltas.textContent = state.jitterDeltas.length ? `[${state.jitterDeltas.join(', ')}]` : '—';
+  }
+  function refreshPlacementUI(){
+    if (state.hiSpeed){
+      el.placementInfo.textContent = 'Placement: 8ths (down & up)';
+      el.placementInfo.style.borderColor = '#2b7';
+    } else {
+      el.placementInfo.textContent = 'Placement: 16ths (full options)';
+      el.placementInfo.style.borderColor = '#22313e';
+    }
+  }
+
+  function applyPendingIfBoundary(tick, itick){
+    const atLoopStart = (tick===0);
+    const idxNow = chordIndexForTick(itick, state.boundsTicks);
+    const atChordBoundary = (state.currentChordIndex !== idxNow);
+    if (atLoopStart || atChordBoundary){
+      let rebound=false;
+      if (state.pending.progression){ state.progression = state.pending.progression; state.pending.progression=null; rebound=true; }
+      if (state.pending.key){
+        state.key = state.pending.key; state.pending.key=null; el.keySelect.value = KEYS.indexOf(state.key);
+        publishKey(state.key);
+      }
+      if (state.pending.loopBeats){ state.loopBeats = state.pending.loopBeats; state.pending.loopBeats=null; rebound=true; }
+      if (state.pending.jitterEnabled !== null){ state.jitterEnabled = !!state.pending.jitterEnabled; state.pending.jitterEnabled=null; rebound=true; }
+      if (state.pending.jitterMax !== null){ state.jitterMax = Math.max(0, Math.min(8, state.pending.jitterMax|0)); state.pending.jitterMax=null; rebound=true; }
+      if (state.pending.rejitter){ state.pending.rejitter=false; rebound=true; }
+      if (rebound){ recomputeBoundariesAndJitter(); refreshProgLabel(); refreshLoopUI(); refreshJitterUI(); refreshPlacementUI(); }
+    }
+  }
+
+  function setAdd7(v){ state.add7 = !!v; el.add9.disabled = !state.add7; if (!state.add7) { state.add9=false; el.add9.checked=false; } }
+
+  function recomputeBoundariesAndJitter(initial=false){
+    state.baseBoundsTicks = baseTickBoundariesFor(state.progression.length, state.loopBeats);
+
+    let B = state.baseBoundsTicks;
+    if (state.jitterEnabled && state.jitterMax > 0 && state.progression.length > 1){
+      const Bp = applyJitter(B, state.jitterMax);
+      B = Bp;
+      state.jitterDeltas = state.baseBoundsTicks.map((b,i)=> (i===0||i===state.baseBoundsTicks.length-1) ? 0 : (Bp[i]-b));
+    } else {
+      state.jitterDeltas = [];
+    }
+
+    if (state.hiSpeed && B.length > 2){
+      B = snapInnerToEighths(B);
+    }
+
+    state.boundsTicks = B.slice();
+
+    if (!initial){
+      state.currentChordIndex = -1;
+    }
+  }
+
+  // -------------------- Playback engine (driven by external ticks) --------------------
+  function processTick(msg){
+    const t = msg.count|0;
+    const extBeat = (typeof msg.loopBeat === 'number' ? msg.loopBeat|0 : Math.floor(t/4)) % 32;
+    const iBeat = extBeat % state.loopBeats;
+    const iTick = ((t % 128) % (4*state.loopBeats));
+
+    el.st_count.textContent = t;
+    el.st_beat.textContent = extBeat;
+    el.st_iBeat.textContent = iBeat;
+    el.st_iTick.textContent = iTick;
+    el.st_bpm.textContent = msg.bpm != null ? Math.round(msg.bpm) : '—';
+
+    const bpm = (msg.bpm && msg.bpm>0) ? msg.bpm : 120;
+    const subdiv = (msg.subdiv && msg.subdiv>0) ? msg.subdiv : 4;
+    const tickMs = 60000 / (bpm * subdiv);
+    scheduleSilenceGuard(tickMs);
+
+    const prevHi = state.hiSpeed;
+    state.bpm = bpm;
+    state.hiSpeed = bpm > 130;
+    if (state.hiSpeed !== prevHi){
+      recomputeBoundariesAndJitter();
+      refreshPlacementUI();
+    }
+
+    if (state.lastTick === -1) {
+      if (t !== 0) { state.lastTick = t; return; }
+    }
+
+    applyPendingIfBoundary(t, iTick);
+
+    const idx = chordIndexForTick(iTick, state.boundsTicks);
+
+    const boundaryChange = (t===0) || (idx !== state.currentChordIndex);
+    if (boundaryChange){
+      // NOTE-OFFS for previous chord
+      for (const n of state.currentNotes) MIDI.noteOff(n);                 // Ch.1
+      // (CH3 OFF) no noteOffs on Ch.3
+      if (state.currentRootCh2 >= 0) MIDI.noteOffCh(state.currentRootCh2, 1); // Ch.2
+
+      const rn = state.progression[idx];
+      const notes = buildChordMidi(rn, state.key, state.add7, state.add9);
+
+      // Ch.1 chord (unchanged)
+      state.currentNotes = notes;
+      state.currentChordIndex = idx;
+      for (const n of notes) MIDI.noteOn(n);
+
+      // (CH3 OFF) — removed mirroring the full chord on Channel 3
+
+      // Ch.2 root-only (unchanged)
+      state.currentRootCh2 = (notes.length ? notes[0] : -1);
+      if (state.currentRootCh2 >= 0) MIDI.noteOnCh(state.currentRootCh2, 1); // 0-based idx 1 = Ch.2
+
+      const chordName = describeChord(rn, state.key, state.add7, state.add9);
+      document.getElementById('nowPlaying').textContent = `Chord ${idx+1}/${state.progression.length}: ${rn} → ${chordName}`;
+    }
+
+    state.lastTick = t;
+  }
+
+  function describeChord(token, key, add7, add9){
+    const t = parseRomanToken(token);
+    const degIndex = (t.degree - 1) % 7;
+    const baseScale = key.scale;
+    let rootPC = (key.tonic + baseScale[degIndex] + t.acc) % 12; if (rootPC<0) rootPC+=12;
+    const name12 = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+    const rootName = name12[rootPC];
+    const isDominant = t.isUpper && t.degree===5 && t.acc===0;
+    let q = (t.quality==='maj' ? '' : t.quality==='min' ? 'm' : t.quality==='dim' ? 'dim' : 'aug');
+    if (q==='dim') q='m♭5';
+    let ext = '';
+    if (add7){
+      if (t.quality==='dim') ext='7♭5';
+      else if (isDominant) ext='7';
+      else if (t.quality==='min') ext='7';
+      else ext='maj7';
+      if (add9) ext += ' (add9)';
+    }
+    return `${rootName}${q}${ext ? ' '+ext : ''}`.trim();
+  }
+
+  // -------------------- BroadcastChannel subscription --------------------
+  function initTicker(){
+    const bc = new BroadcastChannel('internal-ticker');
+    bc.onmessage = ev => {
+      const m = ev.data || {};
+      if (!m) return;
+      if (m.type === 'tick') {
+        processTick(m);
+      } else if ((m.type === 'transport' && (m.state === 'stopped' || m.play === false)) || m.type === 'stop') {
+        silenceAll('transport stop');
+      }
+    };
+  }
+
+  // -------------------- Event bindings --------------------
+  function bindUI(){
+    el.midiOut.addEventListener('change', e=> MIDI.selectById(e.target.value));
+    el.panic.addEventListener('click', ()=> silenceAll('panic'));
+
+    el.randProg.addEventListener('click', ()=>{
+      let next; do { next = pickRandom(PROGRESSIONS); } while (next === state.progression && PROGRESSIONS.length>1);
+      state.pending.progression = next;
+      state.pending.rejitter = true;
+    });
+
+    el.randKey.addEventListener('click', ()=>{
+    if (state.keySource !== 'manual') return;
+    let next; do { next = pickRandom(KEYS); } while (next === state.key && KEYS.length>1);
+    state.pending.key = next;
+    });
+
+    el.keySelect.addEventListener('change', e=>{
+    if (state.keySource !== 'manual') return;
+    const idx = parseInt(e.target.value,10) || 0;
+    state.pending.key = KEYS[idx];
+    });
+
+
+    el.add7.addEventListener('change', e=> setAdd7(e.target.checked));
+    el.add9.addEventListener('change', e=> state.add9 = !!e.target.checked);
+
+    el.loopLen.addEventListener('change', e=>{
+      const L = parseInt(e.target.value,10);
+      if (![4,8,16,32].includes(L)) return;
+      state.pending.loopBeats = L;
+      state.pending.rejitter = true;
+    });
+
+    el.enableJitter.addEventListener('change', e=>{
+      state.pending.jitterEnabled = e.target.checked;
+      state.pending.rejitter = true;
+    });
+    el.jitterMax.addEventListener('change', e=>{
+      const J = parseInt(e.target.value,10);
+      state.pending.jitterMax = isFinite(J) ? Math.max(0, Math.min(8, J)) : 4;
+      state.pending.rejitter = true;
+    });
+    el.randGroove.addEventListener('click', ()=>{
+      state.pending.rejitter = true;
+    });
+    const keySourceSel = document.getElementById('keySource');
+
+    keySourceSel.addEventListener('change', e => {
+    state.keySource = e.target.value;
+  
+    if (state.keySource === 'external'){
+      el.keySelect.disabled = true;
+      el.randKey.disabled = true;
+      startKeyWS();
+    } else {
+      el.keySelect.disabled = false;
+      el.randKey.disabled = false;
+      stopKeyWS();
+    }
+});
+
+  }
+
+  // -------------------- Boot --------------------
+  function boot(){
+    refreshKeySelect();
+    refreshProgLabel();
+    refreshLoopUI();
+    refreshJitterUI();
+    refreshPlacementUI();
+    setAdd7(false);
+    bindUI();
+    MIDI.init();
+    initTicker();
+    publishKey(state.key);
+  }
+
+  window.addEventListener('load', boot);
+})();
+</script>
+</body>
+</html>

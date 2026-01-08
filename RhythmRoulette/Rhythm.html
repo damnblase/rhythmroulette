@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RR</title>
+  <style>
+    /* =========================================================
+       "MINIMAL WHITE UI" — integrated styling
+       ========================================================= */
+
+    :root{
+      --ui-bg: #ffffff;
+      --ui-fg: #000000;
+
+      --ui-border: #000000;
+      --ui-radius: 10px;
+
+      --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+      --ui-font-size: 14px;
+      --ui-line-height: 1.25;
+
+      --ui-pad-y: 10px;
+      --ui-pad-x: 12px;
+
+      --ui-gap: 10px;
+      --ui-page-pad: 18px;
+      --ui-max-width: 100%;
+    }
+
+    html, body{
+      margin:0;
+      height:100%;
+      background: var(--ui-bg);
+      color: var(--ui-fg);
+      font-family: var(--ui-font);
+      font-size: var(--ui-font-size);
+      line-height: var(--ui-line-height);
+    }
+
+    .minui-wrap{
+      max-width: var(--ui-max-width);
+      padding: var(--ui-page-pad);
+      margin: 0 auto;
+      display: grid;
+      gap: var(--ui-gap);
+    }
+
+    .minui-row{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      gap: var(--ui-gap);
+    }
+
+    .minui-wrap select,
+    .minui-wrap button,
+    .minui-wrap input[type="number"],
+    .minui-wrap input[type="text"]{
+      background: var(--ui-bg);
+      color: var(--ui-fg);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius);
+      padding: var(--ui-pad-y) var(--ui-pad-x);
+      font: inherit;
+      line-height: inherit;
+      box-shadow: none;
+      appearance: auto;
+    }
+
+    .minui-wrap button{
+      cursor:pointer;
+      user-select:none;
+    }
+
+    .minui-wrap select:disabled,
+    .minui-wrap button:disabled,
+    .minui-wrap input:disabled{
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .minui-checkbox{
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      font: inherit;
+      color: var(--ui-fg);
+      white-space: nowrap;
+    }
+    .minui-checkbox input[type="checkbox"]{ margin: 0; }
+
+    .minui-hidden{ display:none !important; }
+
+    .minui-flatcard{
+      background: transparent !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+    }
+
+    /* =========================================================
+       UI removals via CSS only (no DOM removals)
+       ========================================================= */
+
+    /* Hide the page title "RR" */
+    h1{ display:none !important; }
+
+    /* Hide section headings text only */
+    #transportSection > h2{ display:none !important; }
+    #presetControls > h2{ display:none !important; }
+    #instrumentControls > h2{ display:none !important; }
+
+    /* Hide the “Loaded Presets:” label next to preset dropdown */
+    label[for="presetSelect"]{ display:none !important; }
+
+    /* Remove borders around the three main sections (visual only) */
+    .section{
+      background: transparent;
+      border: 0 !important;
+      border-radius: 0 !important;
+      padding: var(--ui-pad-y) var(--ui-pad-x);
+      margin: 0;
+      display: grid;
+      gap: var(--ui-gap);
+    }
+
+    .button-group button,
+    .button-group input,
+    button { margin: 0; }
+
+    label{ white-space: nowrap; }
+
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+
+    /* Flash light element (kept in DOM; hidden) */
+    #flashLight{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: #000000;
+      border: 1px solid var(--ui-border);
+      box-sizing: border-box;
+      display:none !important;
+    }
+
+    .transport-controls{
+      display:flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--ui-gap);
+    }
+    .transport-left{ flex: 1; }
+
+    .flash-container{
+      display:flex;
+      justify-content:flex-end;
+      align-items:center;
+    }
+
+    table{
+      border-collapse: collapse;
+      margin-top: 0;
+      width: auto;
+      max-width: 100%;
+      background: var(--ui-bg);
+    }
+    table, th, td{
+      border: 1px solid var(--ui-border);
+      padding: 4px;
+      text-align: center;
+      font-size: 0.9em;
+      color: var(--ui-fg);
+      background: var(--ui-bg);
+    }
+    .probInput{
+      width: 32px;
+      padding: 6px 8px;
+      border-radius: 8px;
+    }
+    table th:first-child,
+    table td:first-child{ white-space: nowrap; text-align:left; padding-left: 8px; }
+
+    /* Instrument row layout */
+    .instrument{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      gap: var(--ui-gap);
+      margin: 0;
+    }
+    .instrument h3{
+      margin: 0;
+      font-size: 1em;
+      font-weight: 600;
+    }
+
+    .checkbox-label{
+      margin: 0;
+      white-space: nowrap;
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      font: inherit;
+      color: var(--ui-fg);
+    }
+    .checkbox-label input[type="checkbox"]{ margin: 0; }
+
+    /* Keep Instrument Controls toggle button (kept in DOM; hidden by CSS) */
+    #toggleInstrumentControls{ display:none !important; }
+
+    /* Probability table MUST be hidden by default on load */
+    #probabilityTableContainer{ display:none; overflow-x:auto; max-width:100%; }
+
+    /* Instrument controls must be visible by default */
+    #instrumentControls{ display:block; }
+
+    /* Modal */
+    #presetModal{
+      display:none;
+      position:fixed;
+      top:0; left:0;
+      width:100%; height:100%;
+      background: rgba(0,0,0,0.5);
+      align-items:center;
+      justify-content:center;
+      z-index:1000;
+    }
+    #presetModalContent{
+      background: var(--ui-bg);
+      color: var(--ui-fg);
+      border: 1px solid var(--ui-border);
+      padding: 20px;
+      border-radius: var(--ui-radius);
+      text-align:center;
+      min-width: 240px;
+      display:grid;
+      gap: var(--ui-gap);
+    }
+    #presetModalContent label{ font-size: 1em; }
+    #presetModalContent input[type="text"]{ width: 100%; box-sizing:border-box; }
+    #presetModalContent .minui-row{ justify-content:center; }
+
+    /* =========================================================
+       SPACING CONTRACT (single token, 10px everywhere)
+       Must be last so it overrides all previous spacing rules.
+       ========================================================= */
+
+    :root{ --gap: 10px; }
+
+    /* Remove default margins that affect vertical rhythm */
+    :where(html, body, h1, h2, h3, h4, h5, h6, p, label, table, thead, tbody, tr, th, td, ul, ol, li, figure, figcaption){
+      margin: 0;
+    }
+    :where(ul, ol){ padding: 0; list-style: none; }
+
+    /* Enforce 10px rhythm via a single token */
+    .minui-wrap{
+      padding: var(--gap) !important;
+      gap: var(--gap) !important;
+    }
+    .minui-row{
+      gap: var(--gap) !important;
+    }
+
+    /* IMPORTANT: remove section padding so gaps don't add up between sections */
+    .section{
+      padding: 0 !important;
+      gap: var(--gap) !important;
+    }
+
+    /* Remove the extra intermediate row in Transport that was creating "double gaps" */
+    #transportSection .transport-controls{
+      display: none !important;
+    }
+
+    .transport-controls{
+      gap: var(--gap) !important;
+    }
+
+    /* --- CRUCIAL ISOLATION: Instrument Controls MUST NOT inherit conflicting layout --- */
+    #instrumentControls{
+      display: grid !important;
+      gap: var(--gap) !important;
+      align-content: start !important;
+    }
+
+    /* Each instrument row: enforce BOTH horizontal and vertical spacing on wraps */
+    #instrumentControls .instrument{
+      display: flex !important;
+      flex-wrap: wrap !important;
+      align-items: center !important;
+      column-gap: var(--gap) !important;
+      row-gap: var(--gap) !important;
+      gap: var(--gap) !important;
+    }
+
+    #instrumentControls .instrument > *{
+      margin: 0 !important;
+    }
+
+    .minui-checkbox{
+      gap: var(--gap) !important;
+    }
+    .checkbox-label{
+      gap: var(--gap) !important;
+    }
+
+    /* Controls padding (no ad-hoc values) */
+    .minui-wrap select,
+    .minui-wrap button,
+    .minui-wrap input[type="number"],
+    .minui-wrap input[type="text"]{
+      padding: var(--gap) !important;
+    }
+
+    /* Table paddings (no ad-hoc values) */
+    table, th, td{
+      padding: var(--gap) !important;
+    }
+    table th:first-child,
+    table td:first-child{
+      padding-left: var(--gap) !important;
+    }
+    .probInput{
+      padding: var(--gap) !important;
+    }
+
+    /* Modal content padding/gap (no ad-hoc values) */
+    #presetModalContent{
+      padding: var(--gap) !important;
+      gap: var(--gap) !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="minui-wrap">
+    <h1>RR</h1>
+
+    <!-- 1. Transport and Global Settings -->
+    <div class="section" id="transportSection">
+      <h2>Transport & Global Settings</h2>
+
+      <div class="minui-row">
+        <label for="midiOutputSelect">MIDI Output</label>
+        <select id="midiOutputSelect"></select>
+      </div>
+
+      <div class="transport-controls">
+        <div class="transport-left">
+          <!-- Internal Start/Stop/BPM/Swing controls removed by design -->
+        </div>
+        <div class="flash-container">
+          <span id="flashLight"></span>
+        </div>
+      </div>
+
+      <div class="minui-row">
+        <button id="randomizeAll">Randomize Pattern</button>
+        <button id="randomizeAllParams">Randomize Preset</button>
+        <button id="sendToLive">SendToLive</button>
+      </div> 
+      
+    </div>
+
+    <!-- 2. Preset Controls (with Probability Table inside) -->
+    <div class="section" id="presetControls">
+      <h2>Preset Controls</h2>
+
+      <div class="minui-row">
+        <button id="savePreset">Save Preset</button>
+        <button id="loadPresets">Load Presets</button>
+        <input type="file" id="loadPresetsFile" style="display:none" multiple>
+      </div>
+
+      <div class="minui-row">
+        <label for="presetSelect">Loaded Presets:</label>
+        <select id="presetSelect"></select>
+        <button id="removePreset">Remove Preset</button>
+      </div>
+
+      <!-- Lock Preset toggle kept in DOM but hidden/removed from view -->
+      <div class="minui-row" style="display:none">
+        <label for="lockPreset">Lock Preset:</label>
+        <input type="checkbox" id="lockPreset">
+      </div>
+
+      <div class="minui-row">
+        <button id="toggleTable">Show Table</button>
+        <button id="clearTable">Clear Table</button>
+      </div>
+
+      <div id="probabilityTableContainer" style="display:none"></div>
+    </div>
+
+    <!-- Toggle button for Instrument Controls (kept in DOM; hidden by CSS) -->
+    <div>
+      <button id="toggleInstrumentControls">Show Instrument Controls</button>
+    </div>
+
+    <!-- 3. Instrument Specific Controls -->
+    <div class="section" id="instrumentControls">
+      <h2>Instrument Controls</h2>
+
+      <div class="minui-row">
+        <button id="muteAll">Mute All</button>
+        <button id="unmuteAll">Unmute All</button>
+      </div>
+
+      <!-- Order: [Name] [S] [M] [Randomize] [Simplify] -->
+      <div class="instrument" id="kickControls">
+        <h3>Kick</h3>
+        <label class="checkbox-label"><input type="checkbox" id="kickSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="kickMuteCheckbox"> M</label>
+        <button id="randomizeKick">Randomize</button>
+        <button id="simplifyKick">Simplify</button>
+      </div>
+
+      <div class="instrument" id="snareControls">
+        <h3>Snare</h3>
+        <label class="checkbox-label"><input type="checkbox" id="snareSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="snareMuteCheckbox"> M</label>
+        <button id="randomizeSnare">Randomize</button>
+        <button id="simplifySnare">Simplify</button>
+      </div>
+
+      <div class="instrument" id="hiHatControls">
+        <h3>Hi-Hat</h3>
+        <label class="checkbox-label"><input type="checkbox" id="hiHatSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="hiHatMuteCheckbox"> M</label>
+        <button id="randomizeHiHat">Randomize</button>
+        <button id="simplifyHiHat">Simplify</button>
+      </div>
+
+      <div class="instrument" id="tomControls">
+        <h3>Percussion</h3>
+        <label class="checkbox-label"><input type="checkbox" id="tomSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="tomMuteCheckbox"> M</label>
+        <button id="randomizeTom">Randomize</button>
+        <button id="simplifyTom">Simplify</button>
+      </div>
+
+      <div class="instrument" id="clapControls">
+        <h3>Clap</h3>
+        <label class="checkbox-label"><input type="checkbox" id="clapSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="clapMuteCheckbox"> M</label>
+        <button id="randomizeClap">Randomize</button>
+        <button id="simplifyClap">Simplify</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preset Naming Modal -->
+  <div id="presetModal">
+    <div id="presetModalContent">
+      <label for="presetNameInput">Enter a name for your preset:</label>
+      <input type="text" id="presetNameInput" value="preset">
+      <div class="minui-row">
+        <button id="presetModalSave">Save Preset</button>
+        <button id="presetModalCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /***** GLOBALS *****/
+    const steps = 32;               // A-block length
+    const loopSteps = 64;           // A(32) + B/Dup(32)
+    const variationProbability = 0.25;
+
+    // Base probabilities
+    const baseKickProb = 50, baseSnareProb = 50, baseHiHatProb = 50, baseTomProb = 50, baseClapProb = 50;
+    let kickProbabilities = new Array(steps).fill(baseKickProb);
+    let snareProbabilities = new Array(steps).fill(baseSnareProb);
+    let hiHatProbabilities  = new Array(steps).fill(baseHiHatProb);
+    let tomProbabilities    = new Array(steps).fill(baseTomProb);
+    let clapProbabilities   = new Array(steps).fill(baseClapProb);
+
+    // Patterns
+    let kickPattern = new Array(steps).fill(0);
+    let snarePattern = new Array(steps).fill(0);
+    let hiHatPattern = new Array(steps).fill(0);
+    let tomPattern = new Array(steps).fill(0);
+    let clapPattern = new Array(steps).fill(0);
+    let kickPatternDup = new Array(steps).fill(0);
+    let snarePatternDup = new Array(steps).fill(0);
+    let hiHatPatternDup = new Array(steps).fill(0);
+    let tomPatternDup = new Array(steps).fill(0);
+    let clapPatternDup = new Array(steps).fill(0);
+
+    let presetLibrary = [];
+
+    // Mute/Solo
+    let kickMuted=false, snareMuted=false, hiHatMuted=false, tomMuted=false, clapMuted=false;
+    let currentSolo = null;
+
+    function updateVolumes() {} // placeholder kept for compatibility
+    // midisel
+    let lastMidiOutputIds = [];
+    let isUserSelectingMidi = false;
+
+    /***** DUPLICATE PATTERN GEN *****/
+    function generateDuplicatePatterns() {
+      for (let i = 0; i < steps; i++) {
+        kickPatternDup[i]  = (Math.random() < variationProbability) ? ((Math.random()*100 < kickProbabilities[i])  ? 1 : 0) : kickPattern[i];
+        snarePatternDup[i] = (Math.random() < variationProbability) ? ((Math.random()*100 < snareProbabilities[i]) ? 1 : 0) : snarePattern[i];
+        hiHatPatternDup[i] = (Math.random() < variationProbability) ? ((Math.random()*100 < hiHatProbabilities[i])  ? 1 : 0) : hiHatPattern[i];
+        tomPatternDup[i]   = (Math.random() < variationProbability) ? ((Math.random()*100 < tomProbabilities[i])    ? 1 : 0) : tomPattern[i];
+        clapPatternDup[i]  = (Math.random() < variationProbability) ? ((Math.random()*100 < clapProbabilities[i])   ? 1 : 0) : clapPattern[i];
+      }
+    }
+
+    /***** PROBABILITY TABLE *****/
+    function generateProbabilityTable() {
+      const container = document.getElementById("probabilityTableContainer");
+      container.innerHTML = "";
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      const emptyTh = document.createElement("th"); emptyTh.textContent = "";
+      headerRow.appendChild(emptyTh);
+      for (let i = 0; i < steps; i++) {
+        const th = document.createElement("th");
+        th.textContent = i + 1;  // UI stays 1..32
+        headerRow.appendChild(th);
+      }
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      const instruments = ["Kick", "Snare", "Hi-Hat", "Percussion", "Clap"];
+      instruments.forEach(instr => {
+        const row = document.createElement("tr");
+        const nameCell = document.createElement("td"); nameCell.textContent = instr; row.appendChild(nameCell);
+        for (let i = 0; i < steps; i++) {
+          const cell = document.createElement("td");
+          const input = document.createElement("input");
+          input.type = "number"; input.min = "0"; input.max = "100"; input.className = "probInput";
+          if (instr === "Kick") input.value = kickProbabilities[i];
+          else if (instr === "Snare") input.value = snareProbabilities[i];
+          else if (instr === "Hi-Hat") input.value = hiHatProbabilities[i];
+          else if (instr === "Percussion") input.value = tomProbabilities[i];
+          else if (instr === "Clap") input.value = clapProbabilities[i];
+          input.id = instr.replace(/\s+/g, '').toLowerCase() + "Prob_" + i;
+          input.addEventListener("change", function() {
+            const val = parseFloat(this.value);
+            if (instr === "Kick")      kickProbabilities[i] = isNaN(val) ? 0 : val;
+            else if (instr === "Snare") snareProbabilities[i] = isNaN(val) ? 0 : val;
+            else if (instr === "Hi-Hat")hiHatProbabilities[i] = isNaN(val) ? 0 : val;
+            else if (instr === "Percussion") tomProbabilities[i] = isNaN(val) ? 0 : val;
+            else if (instr === "Clap")  clapProbabilities[i] = isNaN(val) ? 0 : val;
+          });
+          cell.appendChild(input);
+          row.appendChild(cell);
+        }
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+    generateProbabilityTable();
+    document.getElementById("probabilityTableContainer").style.display = "none";
+    document.getElementById("toggleTable").textContent = "Show Table";
+
+    /***** PATTERN GENERATION *****/
+    function randomizeInstrumentPattern(instrument) {
+      let probArray, patternArray;
+      if (instrument === "Kick")      { probArray = kickProbabilities;  patternArray = kickPattern; }
+      else if (instrument === "Snare"){ probArray = snareProbabilities; patternArray = snarePattern; }
+      else if (instrument === "Hi-Hat"){ probArray = hiHatProbabilities;patternArray = hiHatPattern; }
+      else if (instrument === "Percussion"){ probArray = tomProbabilities; patternArray = tomPattern; }
+      else if (instrument === "Clap") { probArray = clapProbabilities;  patternArray = clapPattern; }
+
+      for (let i = 0; i < steps; i++) {
+        patternArray[i] = (Math.random() * 100 < probArray[i]) ? 1 : 0;
+      }
+      generateDuplicatePatterns();
+    }
+    function simplifyInstrumentPattern(instrument) {
+      let patternArray;
+      if (instrument === "Kick") patternArray = kickPattern;
+      else if (instrument === "Snare") patternArray = snarePattern;
+      else if (instrument === "Hi-Hat") patternArray = hiHatPattern;
+      else if (instrument === "Percussion") patternArray = tomPattern;
+      else if (instrument === "Clap") patternArray = clapPattern;
+      for (let i = 0; i < steps; i++) {
+        if (patternArray[i] === 1 && Math.random() < 0.5) patternArray[i] = 0;
+      }
+      generateDuplicatePatterns();
+    }
+
+    // Initialize patterns
+    randomizeInstrumentPattern("Kick");
+    randomizeInstrumentPattern("Snare");
+    randomizeInstrumentPattern("Hi-Hat");
+    randomizeInstrumentPattern("Percussion");
+    randomizeInstrumentPattern("Clap");
+
+    /***** WEB MIDI OUTPUT *****/
+    let midiAccess = null;
+    let midiOutput = null;
+
+    const midiSelect = document.getElementById("midiOutputSelect");
+
+    if (navigator.requestMIDIAccess) {
+      navigator.requestMIDIAccess().then(access => {
+        midiAccess = access;
+        updateMidiOutputs();
+        midiAccess.onstatechange = updateMidiOutputs;
+      }).catch(err => {
+        console.error("MIDI access request failed:", err);
+      });
+    } else {
+      console.warn("Web MIDI API not supported.");
+    }
+
+    function updateMidiOutputs() {
+      if (isUserSelectingMidi) return;
+
+      const outputs = Array.from(midiAccess.outputs.values());
+      const ids = outputs.map(o => o.id);
+
+      if (
+        ids.length === lastMidiOutputIds.length &&
+        ids.every((id, i) => id === lastMidiOutputIds[i])
+      ) {
+        return;
+      }
+
+      lastMidiOutputIds = ids.slice();
+
+      const currentSelection = midiSelect.value;
+
+      midiSelect.innerHTML = "";
+
+      if (outputs.length === 0) {
+        const opt = document.createElement("option");
+        opt.textContent = "No MIDI outputs";
+        opt.value = "";
+        midiSelect.appendChild(opt);
+        midiOutput = null;
+        return;
+      }
+
+      outputs.forEach(out => {
+        const opt = document.createElement("option");
+        opt.value = out.id;
+        opt.textContent = out.name;
+        midiSelect.appendChild(opt);
+      });
+
+      midiSelect.addEventListener("mousedown", () => {
+        isUserSelectingMidi = true;
+      });
+
+      midiSelect.addEventListener("blur", () => {
+        isUserSelectingMidi = false;
+      });
+      midiSelect.addEventListener("change", () => {
+        midiOutput = midiAccess.outputs.get(midiSelect.value) || null;
+        if (midiOutput) {
+          console.log("MIDI Output changed to:", midiOutput.name);
+        }
+      });
+
+      if (currentSelection && ids.includes(currentSelection)) {
+        midiSelect.value = currentSelection;
+        midiOutput = midiAccess.outputs.get(currentSelection);
+      } else {
+        midiOutput = outputs[0];
+        midiSelect.value = midiOutput.id;
+      }
+
+      console.log("MIDI outputs updated");
+    }
+
+    function sendMidiNote(note, velocity, channel = 9, durationMs = 200, tsMs = performance.now()) {
+      if (!midiOutput) return;
+      midiOutput.send([0x90 + channel, note, velocity], tsMs);
+      midiOutput.send([0x80 + channel, note, 0], tsMs + durationMs);
+    }
+
+    /***** MUTE/SOLO LOGIC *****/
+    function shouldPlay(instrument) {
+      if (currentSolo) {
+        if (instrument === "kick")  return currentSolo === "kick"  && !kickMuted;
+        if (instrument === "snare") return currentSolo === "snare" && !snareMuted;
+        if (instrument === "hiHat") return currentSolo === "hiHat" && !hiHatMuted;
+        if (instrument === "tom")   return currentSolo === "tom"   && !tomMuted;
+        if (instrument === "clap")  return currentSolo === "clap"  && !clapMuted;
+      } else {
+        if (instrument === "kick")  return !kickMuted;
+        if (instrument === "snare") return !snareMuted;
+        if (instrument === "hiHat") return !hiHatMuted;
+        if (instrument === "tom")   return !tomMuted;
+        if (instrument === "clap")  return !clapMuted;
+      }
+      return false;
+    }
+
+    /***** EXTERNAL TICKER SUBSCRIBER *****/
+    const ticker = new BroadcastChannel('internal-ticker');
+    ticker.onmessage = (e) => {
+      const msg = e.data;
+      if (!msg || msg.type !== 'tick') return;
+      const { count } = msg; // 0..127
+      const step = count % 64;
+      const isA = (step < 32);
+      const i = isA ? step : (step - 32);
+
+      // Flash light behavior unchanged (element hidden by CSS)
+      const light = document.getElementById('flashLight');
+      light.style.backgroundColor = (count % 4 === 0) ? '#000000' : '#ffffff';
+      setTimeout(() => { light.style.backgroundColor = '#000000'; }, 80);
+
+      const tsMs = (typeof msg.timeMs === 'number') ? msg.timeMs : performance.now();
+
+      if (shouldPlay('kick')) {
+        const on = isA ? kickPattern[i] : kickPatternDup[i];
+        if (on === 1) sendMidiNote(36, 127, 9, 200, tsMs);
+      }
+      if (shouldPlay('snare')) {
+        const on = isA ? snarePattern[i] : snarePatternDup[i];
+        if (on === 1) sendMidiNote(38, 127, 9, 200, tsMs);
+      }
+      if (shouldPlay('hiHat')) {
+        const on = isA ? hiHatPattern[i] : hiHatPatternDup[i];
+        if (on === 1) sendMidiNote(42, 127, 9, 200, tsMs);
+      }
+      if (shouldPlay('tom')) {
+        const on = isA ? tomPattern[i] : tomPatternDup[i];
+        if (on === 1) sendMidiNote(50, 127, 9, 200, tsMs);
+      }
+      if (shouldPlay('clap')) {
+        const on = isA ? clapPattern[i] : clapPatternDup[i];
+        if (on === 1) sendMidiNote(39, 127, 9, 200, tsMs);
+      }
+    };
+
+    /***** CLEAR PROBABILITY TABLE *****/
+    document.getElementById('clearTable').addEventListener('click', () => {
+      for (let i = 0; i < steps; i++) {
+        kickProbabilities[i] = 0;
+        snareProbabilities[i] = 0;
+        hiHatProbabilities[i] = 0;
+        tomProbabilities[i] = 0;
+        clapProbabilities[i] = 0;
+      }
+      generateProbabilityTable();
+      generateDuplicatePatterns();
+      console.log("Probability table cleared");
+    });
+
+    /***** PRESET SAVE/LOAD *****/
+    document.getElementById("savePreset").addEventListener("click", () => {
+      document.getElementById("presetModal").style.display = "flex";
+      document.getElementById("presetNameInput").focus();
+    });
+    document.getElementById("presetNameInput").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") { e.preventDefault(); document.getElementById("presetModalSave").click(); }
+    });
+
+    document.getElementById("presetModalSave").addEventListener("click", async () => {
+      const presetName = document.getElementById("presetNameInput").value || "preset";
+      const preset = {
+        kick: kickProbabilities,
+        snare: snareProbabilities,
+        hihat: hiHatProbabilities,
+        hightom: tomProbabilities,
+        clap: clapProbabilities
+      };
+      const presetJSON = JSON.stringify(preset, null, 2);
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: presetName + ".json",
+            types: [{ description: "JSON Files", accept: { "application/json": [".json"] } }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(presetJSON);
+          await writable.close();
+          console.log("Preset saved:", handle.name);
+        } catch (err) { console.error("Error saving file:", err); }
+      } else {
+        const blob = new Blob([presetJSON], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = presetName + ".json";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log("Preset saved (fallback).");
+      }
+      document.getElementById("presetModal").style.display = "none";
+    });
+    document.getElementById("presetModalCancel").addEventListener("click", () => {
+      document.getElementById("presetModal").style.display = "none";
+    });
+
+    document.getElementById("loadPresets").addEventListener("click", () => {
+      document.getElementById("loadPresetsFile").click();
+    });
+    document.getElementById("loadPresetsFile").addEventListener("change", (event) => {
+      const files = event.target.files; if (!files || files.length === 0) return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            const presetData = JSON.parse(e.target.result);
+            if (
+              Array.isArray(presetData.kick) && presetData.kick.length === steps &&
+              Array.isArray(presetData.snare) && presetData.snare.length === steps &&
+              Array.isArray(presetData.hihat) && presetData.hihat.length === steps &&
+              Array.isArray(presetData.hightom) && presetData.hightom.length === steps &&
+              Array.isArray(presetData.clap) && presetData.clap.length === steps
+            ) {
+              const presetName = file.name;
+              presetLibrary.push({ name: presetName, data: presetData });
+              updatePresetDropdown(); // updatePresetDropdown now sorts alphabetically
+              console.log("Preset loaded:", presetName);
+              document.getElementById('randomizeAllParams').click();
+            } else {
+              console.error("Invalid preset format in " + file.name);
+            }
+          } catch (err) {
+            console.error("Error parsing preset file " + file.name + ":", err);
+          }
+        };
+        reader.readAsText(file);
+      }
+      event.target.value = "";
+    });
+
+    function updatePresetDropdown() {
+      // Sort presets alphabetically by name whenever the dropdown is rebuilt
+      presetLibrary.sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: "base" }));
+
+      const select = document.getElementById("presetSelect");
+      select.innerHTML = "";
+      presetLibrary.forEach((preset, index) => {
+        const option = document.createElement("option");
+        option.value = index; option.textContent = preset.name;
+        select.appendChild(option);
+      });
+    }
+
+    document.getElementById("removePreset").addEventListener("click", () => {
+      const select = document.getElementById("presetSelect");
+      const index = select.selectedIndex;
+      if (index >= 0) {
+        const removed = presetLibrary.splice(index, 1);
+        updatePresetDropdown();
+        console.log("Removed preset:", removed);
+      }
+    });
+
+    document.getElementById("presetSelect").addEventListener("change", () => {
+      const select = document.getElementById("presetSelect");
+      const index = select.value;
+      if (index >= 0 && index < presetLibrary.length) {
+        const chosenPreset = presetLibrary[index].data;
+        kickProbabilities = chosenPreset.kick.slice();
+        snareProbabilities = chosenPreset.snare.slice();
+        hiHatProbabilities = chosenPreset.hihat.slice();
+        tomProbabilities = chosenPreset.hightom.slice();
+        clapProbabilities = chosenPreset.clap.slice();
+        generateProbabilityTable();
+        generateDuplicatePatterns();
+        randomizeInstrumentPattern("Kick");
+        randomizeInstrumentPattern("Snare");
+        randomizeInstrumentPattern("Hi-Hat");
+        randomizeInstrumentPattern("Percussion");
+        randomizeInstrumentPattern("Clap");
+        console.log("Preset applied:", presetLibrary[index].name);
+      }
+    });
+
+    /***** MUTE/UNMUTE ALL *****/
+    document.getElementById("muteAll").addEventListener("click", () => {
+      document.getElementById("kickMuteCheckbox").checked = true;
+      document.getElementById("snareMuteCheckbox").checked = true;
+      document.getElementById("hiHatMuteCheckbox").checked = true;
+      document.getElementById("tomMuteCheckbox").checked = true;
+      document.getElementById("clapMuteCheckbox").checked = true;
+      kickMuted = snareMuted = hiHatMuted = tomMuted = clapMuted = true;
+      updateVolumes();
+      console.log("All instruments muted");
+    });
+    document.getElementById("unmuteAll").addEventListener("click", () => {
+      document.getElementById("kickMuteCheckbox").checked = false;
+      document.getElementById("snareMuteCheckbox").checked = false;
+      document.getElementById("hiHatMuteCheckbox").checked = false;
+      document.getElementById("tomMuteCheckbox").checked = false;
+      document.getElementById("clapMuteCheckbox").checked = false;
+      kickMuted = snareMuted = hiHatMuted = tomMuted = clapMuted = false;
+      updateVolumes();
+      console.log("All instruments unmuted");
+    });
+
+    /***** PER-INSTRUMENT SOLO/MUTE *****/
+    document.getElementById('kickSoloCheckbox').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('snareSoloCheckbox').checked = false;
+        document.getElementById('hiHatSoloCheckbox').checked = false;
+        document.getElementById('tomSoloCheckbox').checked = false;
+        document.getElementById('clapSoloCheckbox').checked = false;
+        if (document.getElementById('kickMuteCheckbox').checked) {
+          document.getElementById('kickMuteCheckbox').checked = false; kickMuted = false;
+        }
+        currentSolo = "kick";
+      } else currentSolo = null;
+      updateVolumes(); console.log("Kick solo:", currentSolo);
+    });
+    document.getElementById('kickMuteCheckbox').addEventListener('change', function() {
+      if (this.checked && document.getElementById('kickSoloCheckbox').checked) {
+        document.getElementById('kickSoloCheckbox').checked = false;
+        if (currentSolo === "kick") currentSolo = null;
+      }
+      kickMuted = this.checked; updateVolumes(); console.log("Kick mute:", kickMuted);
+    });
+
+    document.getElementById('snareSoloCheckbox').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('kickSoloCheckbox').checked = false;
+        document.getElementById('hiHatSoloCheckbox').checked = false;
+        document.getElementById('tomSoloCheckbox').checked = false;
+        document.getElementById('clapSoloCheckbox').checked = false;
+        if (document.getElementById('snareMuteCheckbox').checked) {
+          document.getElementById('snareMuteCheckbox').checked = false; snareMuted = false;
+        }
+        currentSolo = "snare";
+      } else currentSolo = null;
+      updateVolumes(); console.log("Snare solo:", currentSolo);
+    });
+    document.getElementById('snareMuteCheckbox').addEventListener('change', function() {
+      if (this.checked && document.getElementById('snareSoloCheckbox').checked) {
+        document.getElementById('snareSoloCheckbox').checked = false;
+        if (currentSolo === "snare") currentSolo = null;
+      }
+      snareMuted = this.checked; updateVolumes(); console.log("Snare mute:", snareMuted);
+    });
+
+    document.getElementById('hiHatSoloCheckbox').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('kickSoloCheckbox').checked = false;
+        document.getElementById('snareSoloCheckbox').checked = false;
+        document.getElementById('tomSoloCheckbox').checked = false;
+        document.getElementById('clapSoloCheckbox').checked = false;
+        if (document.getElementById('hiHatMuteCheckbox').checked) {
+          document.getElementById('hiHatMuteCheckbox').checked = false; hiHatMuted = false;
+        }
+        currentSolo = "hiHat";
+      } else currentSolo = null;
+      updateVolumes(); console.log("Hi-Hat solo:", currentSolo);
+    });
+    document.getElementById('hiHatMuteCheckbox').addEventListener('change', function() {
+      if (this.checked && document.getElementById('hiHatSoloCheckbox').checked) {
+        document.getElementById('hiHatSoloCheckbox').checked = false;
+        if (currentSolo === "hiHat") currentSolo = null;
+      }
+      hiHatMuted = this.checked; updateVolumes(); console.log("Hi-Hat mute:", hiHatMuted);
+    });
+
+    document.getElementById('tomSoloCheckbox').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('kickSoloCheckbox').checked = false;
+        document.getElementById('snareSoloCheckbox').checked = false;
+        document.getElementById('hiHatSoloCheckbox').checked = false;
+        document.getElementById('clapSoloCheckbox').checked = false;
+        if (document.getElementById('tomMuteCheckbox').checked) {
+          document.getElementById('tomMuteCheckbox').checked = false; tomMuted = false;
+        }
+        currentSolo = "tom";
+      } else currentSolo = null;
+      updateVolumes(); console.log("Percussion solo:", currentSolo);
+    });
+    document.getElementById('tomMuteCheckbox').addEventListener('change', function() {
+      if (this.checked && document.getElementById('tomSoloCheckbox').checked) {
+        document.getElementById('tomSoloCheckbox').checked = false;
+        if (currentSolo === "tom") currentSolo = null;
+      }
+      tomMuted = this.checked; updateVolumes(); console.log("Percussion mute:", tomMuted);
+    });
+
+    document.getElementById('clapSoloCheckbox').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('kickSoloCheckbox').checked = false;
+        document.getElementById('snareSoloCheckbox').checked = false;
+        document.getElementById('hiHatSoloCheckbox').checked = false;
+        document.getElementById('tomSoloCheckbox').checked = false;
+        if (document.getElementById('clapMuteCheckbox').checked) {
+          document.getElementById('clapMuteCheckbox').checked = false; clapMuted = false;
+        }
+        currentSolo = "clap";
+      } else currentSolo = null;
+      updateVolumes(); console.log("Clap solo:", currentSolo);
+    });
+    document.getElementById('clapMuteCheckbox').addEventListener('change', function() {
+      if (this.checked && document.getElementById('clapSoloCheckbox').checked) {
+        document.getElementById('clapSoloCheckbox').checked = false;
+        if (currentSolo === "clap") currentSolo = null;
+      }
+      clapMuted = this.checked; updateVolumes(); console.log("Clap mute:", clapMuted);
+    });
+
+    /***** TOGGLE UI VISIBILITY *****/
+    document.getElementById('toggleInstrumentControls').addEventListener('click', () => {
+      const instControls = document.getElementById('instrumentControls');
+      const toggleBtn = document.getElementById('toggleInstrumentControls');
+      if (window.getComputedStyle(instControls).display === "none") {
+        instControls.style.display = "block";
+        toggleBtn.textContent = "Hide Instrument Controls";
+      } else {
+        instControls.style.display = "none";
+        toggleBtn.textContent = "Show Instrument Controls";
+      }
+    });
+
+    let tableVisible = false;
+    document.getElementById("toggleTable").addEventListener("click", function() {
+      tableVisible = !tableVisible;
+      if (tableVisible) {
+        document.getElementById("probabilityTableContainer").style.display = "block";
+        this.textContent = "Hide Table";
+      } else {
+        document.getElementById("probabilityTableContainer").style.display = "none";
+        this.textContent = "Show Table";
+      }
+    });
+
+    /***** SHORTCUTS *****/
+    document.addEventListener('keydown', (e) => {
+      if (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA") return;
+      if (e.code === "KeyN") {
+        e.preventDefault();
+        document.getElementById('randomizeAllParams').click();
+        console.log("Randomize All Parameters triggered (N key)");
+      }
+    });
+
+    /***** GLOBAL RANDOMIZATION BUTTONS *****/
+    document.getElementById('randomizeAll').addEventListener('click', () => {
+      randomizeInstrumentPattern("Kick");
+      randomizeInstrumentPattern("Snare");
+      randomizeInstrumentPattern("Hi-Hat");
+      randomizeInstrumentPattern("Percussion");
+      randomizeInstrumentPattern("Clap");
+      console.log("All patterns randomized");
+    });
+
+    document.getElementById('randomizeAllParams').addEventListener('click', () => {
+      // Behavior unchanged; lockPreset UI removed from view only
+      if (!document.getElementById('lockPreset').checked && presetLibrary.length > 0) {
+        const randomIndex = Math.floor(Math.random() * presetLibrary.length);
+        const chosenPreset = presetLibrary[randomIndex].data;
+        kickProbabilities = chosenPreset.kick.slice();
+        snareProbabilities = chosenPreset.snare.slice();
+        hiHatProbabilities = chosenPreset.hihat.slice();
+        tomProbabilities = chosenPreset.hightom.slice();
+        clapProbabilities = chosenPreset.clap.slice();
+        generateProbabilityTable();
+        generateDuplicatePatterns();
+        document.getElementById("presetSelect").selectedIndex = randomIndex;
+        console.log("Preset applied from library:", presetLibrary[randomIndex].name);
+      }
+
+      randomizeInstrumentPattern("Kick");
+      randomizeInstrumentPattern("Snare");
+      randomizeInstrumentPattern("Hi-Hat");
+      randomizeInstrumentPattern("Percussion");
+      randomizeInstrumentPattern("Clap");
+
+      updateVolumes();
+      console.log("All parameters randomized");
+    });
+
+    /***** PER-INSTRUMENT BUTTONS *****/
+    document.getElementById('randomizeKick').addEventListener('click', () => randomizeInstrumentPattern("Kick"));
+    document.getElementById('simplifyKick').addEventListener('click', () => simplifyInstrumentPattern("Kick"));
+
+    document.getElementById('randomizeSnare').addEventListener('click', () => randomizeInstrumentPattern("Snare"));
+    document.getElementById('simplifySnare').addEventListener('click', () => simplifyInstrumentPattern("Snare"));
+
+    document.getElementById('randomizeHiHat').addEventListener('click', () => randomizeInstrumentPattern("Hi-Hat"));
+    document.getElementById('simplifyHiHat').addEventListener('click', () => simplifyInstrumentPattern("Hi-Hat"));
+
+    document.getElementById('randomizeTom').addEventListener('click', () => randomizeInstrumentPattern("Hi-Hat") /* placeholder to keep original structure */);
+    document.getElementById('simplifyTom').addEventListener('click', () => simplifyInstrumentPattern("Percussion"));
+
+    document.getElementById('randomizeClap').addEventListener('click', () => randomizeInstrumentPattern("Clap"));
+    document.getElementById('simplifyClap').addEventListener('click', () => simplifyInstrumentPattern("Clap"));
+  ///////
+  ///--WS_COMMS----//
+    // Variable globale pour la connexion WebSocket
+let websocket;
+
+// Fonction pour établir la connexion WebSocket
+function setupWebSocket() {
+    websocket = new WebSocket("ws://localhost:8081");
+
+    websocket.onopen = function() {
+        console.log("Connexion WebSocket établie sur ws://localhost:8081");
+    };
+
+    websocket.onerror = function(error) {
+        console.error("Erreur WebSocket :", error);
+    };
+
+    websocket.onclose = function() {
+        console.log("Connexion WebSocket fermée");
+    };
+}
+
+// Fonction pour envoyer les patterns via WebSocket
+function sendPatternsToLive() {
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        console.error("WebSocket non connecté. Tentative de reconnexion...");
+        setupWebSocket();
+        setTimeout(sendPatternsToLive, 1000); // Réessayer après 1 seconde
+        return;
+    }
+
+   // Concaténation des patterns
+    const kickFullPattern = kickPattern.concat(kickPatternDup);
+    const snareFullPattern = snarePattern.concat(snarePatternDup);
+    const hiHatFullPattern = hiHatPattern.concat(hiHatPatternDup);
+    const tomFullPattern = tomPattern.concat(tomPatternDup);
+    const clapFullPattern = clapPattern.concat(clapPatternDup);
+
+    // Crée le dictionnaire avec les patterns concaténés
+    const patternsDict = {
+        kickpattern: kickFullPattern,
+        snarepattern: snareFullPattern,
+        hiHatPattern: hiHatFullPattern,
+        tompattern: tomFullPattern,
+        clappattern: clapFullPattern,
+        presetname:  document.getElementById("presetSelect").value // to do le bon nom cf presetSelect option etc..
+    };
+
+    // Convertit en JSON et envoie
+    const jsonData = JSON.stringify(patternsDict);
+    websocket.send(jsonData);
+    console.log("Patterns envoyés via WebSocket :", patternsDict);
+}
+
+// Écouteur pour le bouton "SendToLive"
+document.getElementById("sendToLive").addEventListener("click", sendPatternsToLive);
+
+// Initialise la connexion WebSocket au chargement de la page
+setupWebSocket();
+  </script>
+</body>
+</html>

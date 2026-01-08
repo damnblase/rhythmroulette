@@ -1,0 +1,24 @@
+Pour utiliser le système rhythm roulette
+
+
+Dans la session Live :
+
+- Créer une piste midi
+- Glisser le device RR.live2ws.amxd dans cette piste
+Le device se trouve dans /live-server/src **NE PAS LE DEPLACER**
+- La fenêtre script du device doit se colorer en vert 
+- le device RR.createDrumClip.amxd permet de créer un clip midi depuis la boite à rythme. Simplement mettre le device dans la piste de midi de son choix / : ça peut être celle de la drum
+
+
+Pour la page web :
+
+- Lancer le terminal
+- Aller au bon dossier : taper cd puis glisser le dossier RhythmRoulette, puis return
+- taper ls, puis return pour vérifier qu'on est dans le bon dossier (doit afficher la liste des pages html)
+- taper http-sever -g 8001, puis return. Le serveur http doit se lancer
+- dans google chrome, taper 127.0.0.1:8001 => on doit charger la page
+
+
+Channels pour instruments :
+Laisser le bus des automations à part (midi control) par ex Bus 3
+

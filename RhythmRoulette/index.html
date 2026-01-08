@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RR</title>
+
+  <style>
+    /* =========================================================
+      MINIMAL WHITE UI
+    ========================================================= */
+
+    :root{
+      --ui-bg: #ffffff;
+      --ui-fg: #000000;
+
+      --ui-border: #000000;
+      --ui-radius: 10px;
+
+      --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+      --ui-font-size: 14px;
+      --ui-line-height: 1.25;
+
+      --ui-pad-y: 10px;
+      --ui-pad-x: 12px;
+
+      --ui-gap: 10px;
+      --ui-page-pad: 18px;
+      --ui-max-width: 100%;
+    }
+
+    html, body{
+      margin:0;
+      height:100%;
+      background: var(--ui-bg);
+      color: var(--ui-fg);
+      font-family: var(--ui-font);
+      font-size: var(--ui-font-size);
+      line-height: var(--ui-line-height);
+    }
+
+    .minui-wrap{
+      max-width: var(--ui-max-width);
+      padding: var(--ui-page-pad);
+      margin: 0 auto;
+      display: grid;
+      gap: var(--ui-gap);
+    }
+
+    .minui-title{
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .minui-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap: var(--ui-gap);
+    }
+
+    .minui-frame{
+      flex: 1 1 420px;
+      min-width: 320px;
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius);
+      background: var(--ui-bg);
+      overflow: hidden;
+    }
+
+    .minui-frame-header{
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--ui-border);
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    /* ===== IFRAME BASE STYLE ===== */
+    .minui-frame iframe{
+      width: 100%;
+      height: 300px;         /* hauteur de base */
+      max-height: 400px;     /* hauteur maximale */
+      border: 0;
+      display: block;
+      background: var(--ui-bg);
+      overflow-y: auto;      /* barre de défilement verticale si nécessaire */
+    }
+  </style>
+</head>
+
+<body>
+  <div class="minui-wrap">
+
+    <div class="minui-title">RR</div>
+
+    <div class="minui-row">
+
+      <div class="minui-frame">
+        <div class="minui-frame-header">Cadence</div>
+        <iframe src="Cadence.html"></iframe>
+      </div>
+
+      <div class="minui-frame">
+        <div class="minui-frame-header">Harmony</div>
+        <iframe src="Harmony.html"></iframe>
+      </div>
+
+      <div class="minui-frame">
+        <div class="minui-frame-header">Shaker</div>
+        <iframe src="Shaker.html"></iframe>
+      </div>
+
+      <div class="minui-frame">
+        <div class="minui-frame-header">Rhythm</div>
+        <iframe src="Rhythm.html"></iframe>
+      </div>
+
+      <div class="minui-frame">
+        <div class="minui-frame-header">MIDI Control</div>
+        <iframe src="midicontrol.html"></iframe>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+(() => {
+  const EXTRA_BOTTOM_PX = 5;
+  const MAX_IFRAME_HEIGHT = 370; // correspond à CSS max-height
+
+  const iframes = () => Array.from(document.querySelectorAll('iframe'));
+  const naturalHeights = new WeakMap();
+  let rafPending = false;
+
+  const schedule = () => {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      resizeAndEqualize();
+    });
+  };
+
+  const safeNumber = (v, fallback) => (Number.isFinite(v) && v > 0 ? v : fallback);
+
+  function measureSameOrigin(iframe) {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return null;
+      const body = doc.body;
+      const de = doc.documentElement;
+      if (!body || !de) return null;
+
+      const h = Math.max(
+        body.scrollHeight, de.scrollHeight,
+        body.offsetHeight, de.offsetHeight,
+        body.clientHeight, de.clientHeight
+      );
+
+      return Math.ceil(h + EXTRA_BOTTOM_PX);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getNaturalHeight(iframe) {
+    const sameOrigin = measureSameOrigin(iframe);
+    if (sameOrigin !== null) {
+      naturalHeights.set(iframe, sameOrigin);
+      return sameOrigin;
+    }
+    const prev = naturalHeights.get(iframe);
+    if (prev) return prev;
+    const rect = iframe.getBoundingClientRect();
+    return Math.max(100, Math.ceil(rect.height || 0));
+  }
+
+  function groupByRow(iframeList) {
+    const tolerance = 2;
+    const rows = [];
+    for (const iframe of iframeList) {
+      const top = Math.round(iframe.getBoundingClientRect().top);
+      let row = rows.find(r => Math.abs(r.top - top) <= tolerance);
+      if (!row) {
+        row = { top, items: [] };
+        rows.push(row);
+      }
+      row.items.push(iframe);
+    }
+    rows.sort((a,b) => a.top - b.top);
+    return rows;
+  }
+
+  function resizeAndEqualize() {
+    const list = iframes();
+    if (!list.length) return;
+
+    const natural = new Map();
+    for (const iframe of list) {
+      natural.set(iframe, getNaturalHeight(iframe));
+    }
+
+    const rows = groupByRow(list);
+
+    for (const row of rows) {
+      let maxH = 0;
+      for (const iframe of row.items) {
+        maxH = Math.max(maxH, safeNumber(natural.get(iframe), 0));
+      }
+      if (!maxH) continue;
+      for (const iframe of row.items) {
+        // ✅ limiter à MAX_IFRAME_HEIGHT
+        const limitedHeight = Math.min(maxH, MAX_IFRAME_HEIGHT);
+        iframe.style.height = `${limitedHeight}px`;
+      }
+    }
+  }
+
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || data.__iframeAutoHeight !== true) return;
+    const reported = Math.ceil(Number(data.height || 0));
+    if (!Number.isFinite(reported) || reported <= 0) return;
+
+    const frame = iframes().find(f => f.contentWindow === event.source);
+    if (!frame) return;
+
+    const enforced = Math.min(Math.max(50, reported + EXTRA_BOTTOM_PX), MAX_IFRAME_HEIGHT);
+    naturalHeights.set(frame, enforced);
+    schedule();
+  });
+
+  function attachSameOriginObservers(iframe) {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+
+      const ro = new ResizeObserver(() => {
+        const h = measureSameOrigin(iframe);
+        if (h !== null) naturalHeights.set(iframe, h);
+        schedule();
+      });
+      ro.observe(doc.documentElement);
+
+      const mo = new MutationObserver(() => schedule());
+      mo.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+
+      doc.fonts && doc.fonts.ready && doc.fonts.ready.then(schedule).catch(()=>{});
+      iframe.contentWindow && iframe.contentWindow.addEventListener('resize', schedule, { passive: true });
+    } catch (e) {}
+  }
+
+  function onIframeLoad(e) {
+    const iframe = e.currentTarget;
+    const h = measureSameOrigin(iframe);
+    if (h !== null) {
+      naturalHeights.set(iframe, h);
+      attachSameOriginObservers(iframe);
+      schedule();
+    } else {
+      try {
+        iframe.contentWindow && iframe.contentWindow.postMessage({ __iframeAutoHeightRequest: true }, '*');
+      } catch (e) {}
+      schedule();
+    }
+  }
+
+  function init() {
+    for (const iframe of iframes()) {
+      iframe.addEventListener('load', onIframeLoad);
+    }
+    schedule();
+    window.addEventListener('resize', schedule, { passive: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+})();
+</script>
+
+</body>
+</html>

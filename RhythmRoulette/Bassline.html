@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Bassline — Continuous Sustain + Capture Once + Octave Blip (In: Ch1 • Out: Ch4)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --bg:#0b0d10; --fg:#e8eef4; --muted:#a9b3bd; --acc:#6ee7ff; --panel:#141922; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif; }
+  .wrap { max-width:980px; margin:28px auto; padding:0 16px; }
+  h1 { font-size:18px; margin:0 0 8px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .card { background:var(--panel); border:1px solid #1e2430; border-radius:12px; padding:14px; }
+  .wide { flex:1 1 560px; }
+  .narrow { flex:1 1 320px; }
+  label { display:block; color:var(--muted); font-size:12px; margin-bottom:6px; }
+  select, button { background:#0f131b; border:1px solid #2a3445; color:var(--fg); padding:8px 10px; border-radius:10px; }
+  button { cursor:pointer; }
+  .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#0e1926; border:1px solid #203149; color:#bfe9ff; font-size:12px; }
+  .status { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  pre { margin:0; white-space:pre-wrap; word-break:break-word; }
+  .grid { display:grid; gap:2px; margin-top:8px; }
+  .cell { height:10px; border-radius:2px; background:#232c3a; opacity:.35; }
+  .cell.on { background:var(--acc); opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎸 Bassline — Continuous Sustain (tiny breaks sometimes) • Capture Once • Octave “Blip” • <span class="mono">Ticker</span> + <span class="mono">MIDI In Ch1</span> → <span class="mono">MIDI Out Ch4</span></h1>
+
+  <div class="row">
+    <div class="card narrow">
+      <label for="midiIn">MIDI Input (Chord Source, Channel 1)</label>
+      <select id="midiIn"></select>
+
+      <div style="height:8px"></div>
+      <label for="midiOut">MIDI Output (Bass Destination)</label>
+      <select id="midiOut"></select>
+
+      <div style="height:8px"></div>
+      <button id="regenBtn">Regenerate Pattern</button>
+
+      <div style="height:10px"></div>
+      <div class="status">
+        <span class="pill" id="modeStatus">Mode: —</span>
+        <span class="pill" id="ornStatus">Ornament: —</span>
+        <span class="pill" id="tickStatus">Ticker: waiting…</span>
+        <span class="pill" id="inStatus">In: —</span>
+        <span class="pill" id="outStatus">Out: —</span>
+        <span class="pill">Bass Out Ch: 4</span>
+      </div>
+    </div>
+
+    <div class="card wide">
+      <div class="row" style="gap:24px; align-items:flex-start;">
+        <div style="min-width:240px;">
+          <label>Pattern (beats / ticks)</label>
+          <div><span id="patBeats" class="mono">—</span> beats &nbsp; <span id="patTicks" class="mono">—</span> ticks</div>
+          <div id="hitGrid" class="grid"></div>
+        </div>
+        <div>
+          <label>Now</label>
+          <div class="mono">step=<span id="curStep">—</span></div>
+          <div class="mono">absTick=<span id="absTick">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px;">
+    <div class="card wide">
+      <label>Debug</label>
+      <pre class="mono" id="debug"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // -----------------------
+  // Constants & Parameters
+  // -----------------------
+  const TICKER_CHANNEL = 'internal-ticker';
+
+  // MIDI routing
+  const MIDI_OUT_CH = 3;   // 0-based → Channel 4
+  const CHORD_IN_CH = 0;   // 0-based → Channel 1
+
+  // Register
+  const NOTE_MIN = 40;     // ≈ E2
+  const NOTE_MAX = 55;     // ≈ G3 (strictly < 60)
+  const CENTER   = 48;     // ≈ C3
+
+  // Clock
+  const LOOP_TICKS = 128;  // global frame length (0..127)
+  const SUBDIV_PER_BEAT = 4;
+
+  // Rhythm density (unchanged sparse hits; sustain makes it feel continuous)
+  const DENSITY_MIN = 0.10;
+  const DENSITY_MAX = 0.20;
+
+  // Continuous sustain: probability to leave a tiny 2-tick break before next onset
+  const GAP2_PROB = 0.10; // 10% of hits (when there is room) leave a 2-tick breath; otherwise no gap
+
+  // Ornament parameters
+  const ORN_ENABLE_PROB = 0.5;    // enable per-pattern with 50% chance
+  const ORN_DELAY = 2;            // ticks after main onset
+  const ORN_DUR   = 1;            // 1 tick long
+  const ORN_LOW_P = 0.40;         // per-hit prob if p ≤ 45
+  const ORN_HIGH_P= 0.15;         // else
+
+  // -----------------------
+  // State
+  // -----------------------
+  let midi = null;
+  let midiOut = null;
+  let midiIn  = null;
+
+  // Ticker tracking
+  let lastTicker = null;
+  let lastCount = null;
+  let loopIndex = 0;     // increases each wrap
+  let absTick = -1;
+
+  // Held chord from MIDI In Ch.1
+  const heldNotes = new Set();
+  let currentChord = { notes: [], root: null, pcs: new Set() };
+
+  // Root memory for inference
+  const rootHistory = new Map();
+  const ROOT_HISTORY_DECAY = 0.9;
+
+  // Pattern
+  let patternBeats = 0;
+  let patternTicks = 0;
+  let hitMap = [];                // boolean[length=patternTicks]
+  let capturedPitches = [];       // (number|null)[length=patternTicks]; frozen once capture ends
+  let lastValidPitch = null;      // for fallback during capture
+
+  // Capture/Freeze state
+  const MODE = { CAPTURING: 'CAPTURING', FROZEN: 'FROZEN' };
+  let mode = MODE.CAPTURING;
+  let capStartLoop = 0;
+  let capStartCount = 0;
+  let capFrozenAtISO = null;
+
+  // Ornament state
+  let ornamentEnabled = false;
+  let lastOrnamentAtAbsTick = null;
+
+  // Voice / scheduling
+  const noteOffQueue = []; // items: { absDue:number, note:number } or { absDue:number, action:'blipOn'|'blipOff', note:number, vel?:number }
+  let activeNote = null;
+
+  // UI elements
+  const $midiIn  = document.getElementById('midiIn');
+  const $midiOut = document.getElementById('midiOut');
+  const $regen   = document.getElementById('regenBtn');
+  const $modeStatus = document.getElementById('modeStatus');
+  const $ornStatus  = document.getElementById('ornStatus');
+  const $tickStatus = document.getElementById('tickStatus');
+  const $inStatus = document.getElementById('inStatus');
+  const $outStatus = document.getElementById('outStatus');
+  const $patBeats = document.getElementById('patBeats');
+  const $patTicks = document.getElementById('patTicks');
+  const $curStep  = document.getElementById('curStep');
+  const $absTick  = document.getElementById('absTick');
+  const $debug    = document.getElementById('debug');
+  const $grid     = document.getElementById('hitGrid');
+
+  // -----------------------
+  // Utilities
+  // -----------------------
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const randInt = (a,b)=> Math.floor(Math.random()*(b-a+1))+a;
+  const pcOf = n => ((n%12)+12)%12;
+
+  function noteOn(note, vel) {
+    if (!midiOut) return;
+    // mono: end previous voice if different
+    if (activeNote !== null && activeNote !== note) {
+      midiOut.send([0x80 | MIDI_OUT_CH, activeNote & 0x7f, 0x40]);
+      activeNote = null;
+    }
+    midiOut.send([0x90 | MIDI_OUT_CH, note & 0x7f, vel & 0x7f]);
+    activeNote = note;
+  }
+  function noteOff(note) {
+    if (!midiOut) return;
+    midiOut.send([0x80 | MIDI_OUT_CH, note & 0x7f, 0x40]);
+    if (activeNote === note) activeNote = null;
+  }
+
+  function mapPitchClassIntoRegister(pc, center=CENTER, lo=NOTE_MIN, hi=NOTE_MAX) {
+    // Choose note with this pc near center, then clamp to [lo,hi] by octaves
+    let candidate = center - ((center - pc) % 12);
+    const diff = ((pc - (candidate % 12) + 12) % 12);
+    candidate += diff;
+    while (candidate > hi) candidate -= 12;
+    while (candidate < lo) candidate += 12;
+    if (candidate > hi) candidate -= 12;
+    return clamp(candidate, lo, hi);
+  }
+
+  function decayRootHistory() {
+    for (const k of rootHistory.keys()) {
+      rootHistory.set(k, rootHistory.get(k) * ROOT_HISTORY_DECAY);
+      if (rootHistory.get(k) < 0.01) rootHistory.delete(k);
+    }
+  }
+
+  function inferRootPitchClass(notes) {
+    if (!notes || notes.length === 0) return null;
+    const sorted = [...notes].sort((a,b)=>a-b);
+    const lowestPC = pcOf(sorted[0]);
+    const pcs = [...new Set(sorted.map(pcOf))];
+    let bestPC = lowestPC, bestScore = rootHistory.get(lowestPC) ?? 0;
+    for (const pc of pcs) {
+      const s = rootHistory.get(pc) ?? 0;
+      if (s > bestScore) { bestScore = s; bestPC = pc; }
+    }
+    return bestPC;
+  }
+
+  function computeAllowedNotesForChord(chord) {
+    if (!chord || chord.notes.length === 0) return [];
+    let rootPC = chord.root != null ? pcOf(chord.root) : inferRootPitchClass(chord.notes);
+    if (rootPC == null) rootPC = pcOf(Math.min(...chord.notes));
+    const rootBase = mapPitchClassIntoRegister(rootPC, CENTER, NOTE_MIN, NOTE_MAX);
+    const upperBound = Math.min(rootBase + 12, NOTE_MAX);
+    const pcs = new Set(chord.notes.map(pcOf));
+    const out = new Set([rootBase]);
+    for (const pc of pcs) {
+      let n = mapPitchClassIntoRegister(pc, CENTER, NOTE_MIN, NOTE_MAX);
+      while (n < rootBase) n += 12;
+      while (n > upperBound) n -= 12;
+      if (n >= rootBase && n <= upperBound) out.add(n);
+    }
+    if (rootBase + 12 <= NOTE_MAX) out.add(rootBase + 12);
+    return [...out].filter(n => n < 60).sort((a,b)=>a-b);
+  }
+
+  function nextHitDistance(fromStep) {
+    // distance in ticks to the next true in hitMap (wrap within pattern)
+    if (!hitMap.length) return 0;
+    for (let d = 1; d <= patternTicks; d++) {
+      const idx = (fromStep + d) % patternTicks;
+      if (hitMap[idx]) return d;
+    }
+    return patternTicks; // fallback
+  }
+
+  // Continuous/legato gate chooser: default = toNext (no gap), sometimes 2-tick breath
+  function chooseGateTicks(step) {
+    const toNext = Math.max(1, nextHitDistance(step)); // ticks until next main onset
+    let gate = toNext; // default continuous
+    if (toNext >= 3 && Math.random() < GAP2_PROB) {
+      gate = toNext - 2; // tiny breath
+    }
+    // Safety: allow gate == toNext (we'll drain NoteOff before the next NoteOn, yielding no gap)
+    return Math.max(1, gate);
+  }
+
+  // -----------------------
+  // Pattern generation (sparse, with guaranteed step 0)
+  // -----------------------
+  function makeSparseHitMap(beats) {
+    const ticks = beats * SUBDIV_PER_BEAT;
+    const arr = new Array(ticks).fill(false);
+    // Mandatory downbeat
+    arr[0] = true;
+    // Fill to ~10–20% density total (including step 0)
+    const targetTotal = Math.max(1, Math.floor(ticks * (DENSITY_MIN + Math.random() * (DENSITY_MAX - DENSITY_MIN))));
+    let placed = 1, guard = 0;
+    while (placed < targetTotal && guard < ticks * 6) {
+      guard++;
+      const k = randInt(1, ticks - 1);
+      if (arr[k]) continue;
+      arr[k] = true;
+      placed++;
+    }
+    return arr;
+  }
+
+  function drawHitGrid() {
+    // Grid shows exactly patternTicks columns
+    $grid.style.gridTemplateColumns = `repeat(${patternTicks}, 1fr)`;
+    $grid.innerHTML = '';
+    for (let i=0; i<patternTicks; i++) {
+      const d = document.createElement('div');
+      d.className = 'cell' + (hitMap[i] ? ' on' : '');
+      $grid.appendChild(d);
+    }
+  }
+
+  function regenPattern() {
+    // choose length 4/8/16 beats
+    const choices = [4,8,16];
+    patternBeats = choices[randInt(0, choices.length-1)];
+    patternTicks = patternBeats * SUBDIV_PER_BEAT;
+    hitMap = makeSparseHitMap(patternBeats);
+
+    // reset capture
+    capturedPitches = new Array(patternTicks).fill(null);
+    lastValidPitch = null;
+    enterCapturing();
+
+    // ornament toggle (per-pattern)
+    ornamentEnabled = Math.random() < ORN_ENABLE_PROB;
+    lastOrnamentAtAbsTick = null;
+
+    $patBeats.textContent = String(patternBeats);
+    $patTicks.textContent = String(patternTicks);
+    drawHitGrid();
+    updateDebug();
+  }
+
+  function enterCapturing() {
+    mode = MODE.CAPTURING;
+    capStartLoop = loopIndex;
+    capStartCount = lastCount ?? 0;
+    capFrozenAtISO = null;
+    updateModeStatus();
+    updateOrnamentStatus();
+  }
+
+  function maybeFreezeOnWrap(currentCount) {
+    // Transition to Frozen at the first wrap (127→0) that occurs after start.
+    if (mode !== MODE.CAPTURING) return;
+    if (currentCount === 0 && loopIndex > capStartLoop) {
+      mode = MODE.FROZEN;
+      capFrozenAtISO = new Date().toISOString();
+      updateModeStatus();
+      updateDebug();
+    }
+  }
+
+  function captureProgressTicks() {
+    const loopsDelta = loopIndex - capStartLoop;
+    const ticksAbs = loopsDelta * LOOP_TICKS + (lastCount ?? 0);
+    return (ticksAbs - capStartCount + LOOP_TICKS) % LOOP_TICKS;
+  }
+
+  // -----------------------
+  // Web MIDI I/O
+  // -----------------------
+  async function initMIDI() {
+    try {
+      midi = await navigator.requestMIDIAccess({ sysex: false });
+    } catch (e) {
+      $inStatus.textContent = 'In: MIDI unavailable';
+      $outStatus.textContent = 'Out: MIDI unavailable';
+      console.error('Web MIDI not available', e);
+      return;
+    }
+    midi.onstatechange = refreshIO;
+    refreshIO();
+  }
+
+  function refreshIO() {
+    // Outputs
+    $midiOut.innerHTML = '';
+    const outs = midi ? [...midi.outputs.values()] : [];
+    if (outs.length === 0) {
+      const opt=document.createElement('option'); opt.value=''; opt.textContent='(no outputs)'; $midiOut.appendChild(opt);
+      midiOut = null;
+    } else {
+      outs.forEach((o, idx) => {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = o.name || `Output ${idx+1}`;
+        $midiOut.appendChild(opt);
+      });
+      if (!midiOut || !outs.find(o=>o.id===midiOut.id)) {
+        midiOut = outs[0];
+        $midiOut.value = outs[0].id;
+      }
+    }
+    // Inputs
+    $midiIn.innerHTML = '';
+    const ins = midi ? [...midi.inputs.values()] : [];
+    if (ins.length === 0) {
+      const opt=document.createElement('option'); opt.value=''; opt.textContent='(no inputs)'; $midiIn.appendChild(opt);
+      bindInput(null);
+    } else {
+      ins.forEach((i, idx) => {
+        const opt = document.createElement('option');
+        opt.value = i.id;
+        opt.textContent = i.name || `Input ${idx+1}`;
+        $midiIn.appendChild(opt);
+      });
+      if (!midiIn || !ins.find(i=>i.id===midiIn.id)) {
+        bindInput(ins[0]);
+        $midiIn.value = ins[0].id;
+      }
+    }
+    updateStatuses();
+  }
+
+  function bindInput(port) {
+    if (midiIn) midiIn.onmidimessage = null;
+    midiIn = port || null;
+    if (midiIn) midiIn.onmidimessage = handleMIDIMessage;
+  }
+
+  $midiOut.addEventListener('change', () => {
+    const id = $midiOut.value;
+    const outs = midi ? [...midi.outputs.values()] : [];
+    midiOut = outs.find(o => o.id === id) || null;
+    updateStatuses();
+  });
+  $midiIn.addEventListener('change', () => {
+    const id = $midiIn.value;
+    const ins = midi ? [...midi.inputs.values()] : [];
+    bindInput(ins.find(i => i.id === id) || null);
+    updateStatuses();
+  });
+
+  // -----------------------
+  // MIDI Input parsing (listen on Channel 1)
+  // -----------------------
+  function handleMIDIMessage(ev) {
+    const [status, data1, data2] = ev.data;
+    const type = status & 0xF0;
+    const ch   = status & 0x0F;
+    if (ch !== CHORD_IN_CH) return;
+
+    if (type === 0x90) { // Note On
+      const note = data1 & 0x7F;
+      const vel  = data2 & 0x7F;
+      if (vel > 0) heldNotes.add(note);
+      else heldNotes.delete(note); // vel 0 as Note Off
+      onHeldNotesChanged();
+    } else if (type === 0x80) { // Note Off
+      const note = data1 & 0x7F;
+      heldNotes.delete(note);
+      onHeldNotesChanged();
+    } else if (type === 0xB0) { // CC
+      const cc = data1 & 0x7F;
+      if (cc === 123) { // All Notes Off
+        heldNotes.clear();
+        onHeldNotesChanged();
+      }
+    }
+  }
+
+  function onHeldNotesChanged() {
+    const notes = [...heldNotes].sort((a,b)=>a-b);
+    const pcs = new Set(notes.map(pcOf));
+    currentChord = { notes, root: null, pcs };
+
+    // Root memory
+    decayRootHistory();
+    if (notes.length) {
+      const inferredPC = inferRootPitchClass(notes);
+      if (inferredPC != null) rootHistory.set(inferredPC, (rootHistory.get(inferredPC) ?? 0) + 1.0);
+    }
+    updateStatuses();
+    updateDebug();
+  }
+
+  // -----------------------
+  // BroadcastChannel — ticker
+  // -----------------------
+  const tickerChan = new BroadcastChannel(TICKER_CHANNEL);
+  tickerChan.onmessage = (ev) => {
+    const msg = ev.data;
+    if (!msg || msg.type !== 'tick') return;
+
+    if (lastCount == null) {
+      loopIndex = 0;
+    } else if (msg.count < lastCount) {
+      loopIndex += 1; // wrapped
+    }
+    lastCount = msg.count | 0;
+    absTick = loopIndex * LOOP_TICKS + lastCount;
+    lastTicker = msg;
+
+    processTick(absTick, lastCount);
+    maybeFreezeOnWrap(lastCount);
+  };
+
+  // -----------------------
+  // Queue helpers (handle ornaments + offs)
+  // -----------------------
+  function handleQueueItem(item) {
+    if (!item.action) {
+      noteOff(item.note);
+      return;
+    }
+    if (item.action === 'blipOn') {
+      if (activeNote !== null) noteOff(activeNote);
+      noteOn(item.note, item.vel ?? 96);
+      return;
+    }
+    if (item.action === 'blipOff') {
+      noteOff(item.note);
+      return;
+    }
+  }
+
+  function drainQueueUpTo(abs){
+    while (noteOffQueue.length && noteOffQueue[0].absDue <= abs) {
+      const item = noteOffQueue.shift();
+      handleQueueItem(item);
+    }
+  }
+
+  function insertNoteOff(item) {
+    let i = 0;
+    while (i < noteOffQueue.length && noteOffQueue[i].absDue <= item.absDue) i++;
+    noteOffQueue.splice(i, 0, item);
+  }
+
+  function scheduleMonoSwitch(atAbsTick, blipNote, blipVel, blipDurTicks) {
+    insertNoteOff({ absDue: atAbsTick, action: 'blipOn', note: blipNote, vel: blipVel });
+    insertNoteOff({ absDue: atAbsTick + blipDurTicks, action: 'blipOff', note: blipNote });
+  }
+
+  // -----------------------
+  // Main tick handler
+  // -----------------------
+  function processTick(abs, loopCount) {
+    $absTick.textContent = String(abs);
+    updateStatuses();
+
+    // Drain due actions/offs FIRST (guarantees we can sustain to next onset with gate==toNext)
+    drainQueueUpTo(abs);
+
+    if (!midiOut || !lastTicker || !patternTicks) return;
+
+    const step = loopCount % patternTicks;
+    $curStep.textContent = String(step);
+    highlightGridStep(step);
+
+    if (!hitMap[step]) {
+      updateModeStatus(); // progress counter in capturing mode
+      return; // rest
+    }
+
+    // Pitch selection
+    let pitch = null;
+    if (mode === MODE.FROZEN) {
+      pitch = capturedPitches[step];
+      if (pitch == null) { updateModeStatus(); return; } // rest if nothing captured there
+    } else {
+      // CAPTURING: build allowed from current chord
+      const allowed = computeAllowedNotesForChord(currentChord);
+      if (step === 0 && allowed.length) {
+        pitch = allowed[0]; // prefer lowest/root-ish on downbeat
+      } else if (allowed.length) {
+        pitch = allowed[randInt(0, allowed.length - 1)];
+      } else if (lastValidPitch != null) {
+        pitch = lastValidPitch;
+      } else {
+        // final fallback: mapped root from (inferred or lowest)
+        const rootPC = inferRootPitchClass(currentChord.notes) ?? pcOf(currentChord.notes[0] ?? CENTER);
+        pitch = mapPitchClassIntoRegister(rootPC, CENTER, NOTE_MIN, NOTE_MAX);
+      }
+      if (pitch >= 60) pitch -= 12;
+      lastValidPitch = pitch;
+      // Record the *actual* pitch used for this step
+      capturedPitches[step] = pitch;
+    }
+
+    // Fire main note with continuous/near-continuous gate
+    if (activeNote !== null) noteOff(activeNote);
+    const toNext = Math.max(1, nextHitDistance(step));
+    const gate = chooseGateTicks(step);
+    const vel = randInt(84, 104);
+    noteOn(pitch, vel);
+    insertNoteOff({ absDue: abs + gate, note: pitch });
+
+    // Optional ORNAMENT: schedule an octave blip p+12 two ticks later for 1 tick
+    if (ornamentEnabled) {
+      const blipPitch = pitch + 12;
+      const enoughSpace = toNext >= (ORN_DELAY + ORN_DUR); // need at least 3 ticks to avoid collision
+      const inRegister = blipPitch < 60;
+      if (enoughSpace && inRegister) {
+        const p_hit = (pitch <= 45) ? ORN_LOW_P : ORN_HIGH_P;
+        if (Math.random() < p_hit) {
+          scheduleMonoSwitch(abs + ORN_DELAY, blipPitch, vel, ORN_DUR);
+          lastOrnamentAtAbsTick = abs + ORN_DELAY;
+        }
+      }
+    }
+
+    updateModeStatus(); // update capture progress counter
+    updateDebug();
+  }
+
+  // -----------------------
+  // highlight current grid step
+  // -----------------------
+  function highlightGridStep(step) {
+    if (!$grid.children.length) return;
+    for (let i=0; i<$grid.children.length; i++) {
+      const el = $grid.children[i];
+      el.style.outline = (i === step) ? '1px solid #6ee7ff' : 'none';
+    }
+  }
+
+  // -----------------------
+  // UI / Status / Debug
+  // -----------------------
+  function updateStatuses() {
+    $tickStatus.textContent = lastTicker ? `Ticker: bpm=${lastTicker.bpm ?? '—'} count=${lastTicker.count}` : 'Ticker: waiting…';
+    $inStatus.textContent  = midiIn  ? `In: ${midiIn.name} (Ch1)` : 'In: not selected';
+    $outStatus.textContent = midiOut ? `Out: ${midiOut.name} (Ch4)` : 'Out: not selected';
+  }
+
+  function updateModeStatus() {
+    if (mode === MODE.CAPTURING) {
+      const n = captureProgressTicks();
+      $modeStatus.textContent = `Mode: Capturing (${n}/128 ticks)`;
+    } else {
+      $modeStatus.textContent = 'Mode: Frozen';
+    }
+  }
+
+  function updateOrnamentStatus() {
+    $ornStatus.textContent = ornamentEnabled ? 'Ornament: Enabled' : 'Ornament: Disabled';
+  }
+
+  function updateDebug() {
+    const dbg = {
+      mode,
+      captureProgress: (mode === MODE.CAPTURING) ? `${captureProgressTicks()}/128` : '—',
+      frozenAtISO: capFrozenAtISO,
+      patternBeats, patternTicks,
+      ornamentEnabled,
+      lastOrnamentAtAbsTick,
+      hitMap,
+      capturedPitches,
+      heldNotes: [...heldNotes].sort((a,b)=>a-b),
+      currentChord: { notes: currentChord.notes, pcs: [...currentChord.pcs] },
+      absTick, loopIndex, lastCount
+    };
+    $debug.textContent = JSON.stringify(dbg, null, 2);
+  }
+
+  // -----------------------
+  // Boot & Controls
+  // -----------------------
+  document.getElementById('regenBtn').addEventListener('click', () => {
+    regenPattern();
+    updateOrnamentStatus();
+  });
+
+  // Init
+  regenPattern();
+  initMIDI();
+})();
+</script>
+<script src="iframe-autosize-child.js"></script>
+</body>
+</html>

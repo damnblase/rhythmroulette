@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Melody Generator — External 16th-Note Ticker + MIDI CH2</title>
+<style>
+  :root { --fg:#111; --bg:#fafafa; --muted:#bbb; --accent:#222; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font:14px/1.4 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  .wrap { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  label { display:flex; align-items:center; gap:8px; }
+  input[type="text"] { padding:8px 10px; border:1px solid #ddd; border-radius:8px; min-width:220px; }
+  select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+  button { padding:10px 14px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd; background:#fff; font-size:12px; }
+  .dbg { display:grid; grid-template-columns:repeat(2,minmax(160px,auto)); gap:8px 16px; padding:12px; border:1px solid #eee; border-radius:12px; background:#fff; }
+  .k { color:#666; }
+  canvas { width:100%; height:160px; background:#fff; border:1px solid #eee; border-radius:12px; display:block; }
+  .small { color:#666; margin-top:8px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Melody Generator — External 16th-Note Ticker (+ MIDI CH 2)</h1>
+
+ <div class="row">
+  <label>Seed
+    <input id="seedInput" type="text" placeholder="(optional) enter seed for reproducible melody" />
+  </label>
+
+  <label>Melody length (beats):
+    <select id="melodyLengthSelect">
+      <option value="4">4</option>
+      <option value="8" selected>8</option>
+      <option value="12">12</option>
+      <option value="16">16</option>
+    </select>
+  </label>
+
+  <button id="btnGenerate">Generate New Melody</button>
+  <span id="status" class="pill">idle</span>
+</div>
+
+
+    <div class="row">
+      <label>MIDI Output
+        <select id="midiOutSelect" title="Choose MIDI output"></select>
+      </label>
+      <button id="btnRefreshMIDI" title="Refresh MIDI device list">Refresh</button>
+      <span class="pill" id="midiStatus">MIDI: not initialized</span>
+      <span class="pill">Channel: 2</span>
+    </div>
+
+    <div class="dbg" aria-live="polite">
+      <div><span class="k">External tick:</span> <span id="dbgCount">–</span></div>
+      <div><span class="k">Key:</span> <span id="dbgKey">A minor</span></div>
+      <div><span class="k">Melody length (beats):</span> <span id="dbgBeats">–</span></div>
+      <div><span class="k">Melody ticks:</span> <span id="dbgTicks">–</span></div>
+      <div><span class="k">Loop pos (local tick):</span> <span id="dbgLocal">–</span></div>
+      <div><span class="k">Notes in loop:</span> <span id="dbgNotes">–</span></div>
+    </div>
+
+    <p class="small">Grid preview shows one full melody loop (top row = higher pitch). Blue bars = notes. Red line = current local position.</p>
+    <canvas id="grid" width="920" height="160"></canvas>
+  </div>
+
+<script>
+(() => {
+  // ----------------------------
+  // Broadcast channels (I/O)
+  // ----------------------------
+  const chTicker = new BroadcastChannel('internal-ticker');   // expects {type:'tick', time, count, bpm, subdiv, subIndex, beat, loopBeat}
+  const chKey    = new BroadcastChannel('music-key');         // expects {type:'key', tonic:'A', mode:'minor'}
+  const chOut    = new BroadcastChannel('melody-out');        // emits noteOn/noteOff events
+
+  // ----------------------------
+  // UI elements
+  // ----------------------------
+  const seedInput = document.getElementById('seedInput');
+  const btnGenerate = document.getElementById('btnGenerate');
+  const statusEl = document.getElementById('status');
+
+  const midiOutSelect = document.getElementById('midiOutSelect');
+  const btnRefreshMIDI = document.getElementById('btnRefreshMIDI');
+  const midiStatus = document.getElementById('midiStatus');
+
+  const dbgCount = document.getElementById('dbgCount');
+  const dbgKey   = document.getElementById('dbgKey');
+  const dbgBeats = document.getElementById('dbgBeats');
+  const dbgTicks = document.getElementById('dbgTicks');
+  const dbgLocal = document.getElementById('dbgLocal');
+  const dbgNotes = document.getElementById('dbgNotes');
+
+  const grid = document.getElementById('grid');
+  const g = grid.getContext('2d');
+
+  // ----------------------------
+  // Deterministic RNG (Mulberry32 + string hash)
+  // ----------------------------
+  function xmur3(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function() {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return (h ^= h >>> 16) >>> 0;
+    };
+  }
+  function mulberry32(a) {
+    return function() {
+      let t = (a += 0x6D2B79F5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function rngFromSeed(seedStr) {
+    if (!seedStr) return Math.random;
+    const seedFn = xmur3(seedStr);
+    return mulberry32(seedFn());
+  }
+
+  // ----------------------------
+  // Music helpers
+  // ----------------------------
+  const NOTE_TO_SEMITONE = { C:0, 'C#':1, Db:1, D:2, 'D#':3, Eb:3, E:4, F:5, 'F#':6, Gb:6, G:7, 'G#':8, Ab:8, A:9, 'A#':10, Bb:10, B:11 };
+  const NAT_MINOR = [0, 2, 3, 5, 7, 8, 10]; // natural minor degrees, semitone offsets from tonic
+  const NAT_MAJOR = [0, 2, 4, 5, 7, 9, 11];
+
+  function midiFromTonic(tonic, octave=4) {
+    const semi = NOTE_TO_SEMITONE[tonic] ?? 9; // default A
+    return 12 * (octave + 1) + semi; // MIDI: C4=60
+  }
+function buildScale(tonic='A', mode='minor', low=48, high=72) {
+  const tonicSemi = NOTE_TO_SEMITONE[tonic] ?? 9;
+  const intervals = (mode === 'major') ? NAT_MAJOR : NAT_MINOR;
+
+  const allowed = [];
+  for (let midi = low; midi <= high; midi++) {
+    const rel = ((midi % 12) - tonicSemi + 12) % 12;
+    if (intervals.includes(rel)) allowed.push(midi);
+  }
+  return allowed;
+}
+
+  function nearestScalePitch(target, scale) {
+    let best = scale[0], bestDist = Infinity;
+    for (const p of scale) {
+      const d = Math.abs(p - target);
+      if (d < bestDist) { best = p; bestDist = d; }
+    }
+    return best;
+  }
+
+function recolorMelody(melody, oldKey, newKey) {
+  if (!melody) return melody;
+
+  const oldScale = buildScale(oldKey.tonic, oldKey.mode, 36, 96);
+  const newScale = buildScale(newKey.tonic, newKey.mode, 36, 96);
+
+  const recolored = {
+    ticks: melody.ticks,
+    notes: melody.notes.map(n => {
+      // trouver degré approximatif dans l’ancienne gamme
+      const idx = nearestIndexInScale(n.pitch, oldScale);
+
+      // récupérer note correspondante dans la nouvelle gamme
+      let newPitch = newScale[idx];
+
+      // ajuster octave pour rester proche
+      while (newPitch - n.pitch > 6) newPitch -= 12;
+      while (n.pitch - newPitch > 6) newPitch += 12;
+
+      return {
+        ...n,
+        pitch: newPitch
+      };
+    })
+  };
+
+  return recolored;
+}
+
+  // ----------------------------
+  // State
+  // ----------------------------
+  let currentKey = { tonic:'A', mode:'minor' };
+  let count = 0;                 // external absolute tick 0..127 (wraps externally)
+  let bpm = 120, subdiv = 4;     // informative
+  const loopTicksExternal = 128; // 32 beats * 4 ticks
+
+  const BEAT_OPTIONS = [4, 8, 12, 16];
+  const DUR_ALLOWED = [1, 2, 3, 4, 6, 8, 12, 16];
+  const lengthSelect = document.getElementById('melodyLengthSelect');
+  let melodyLengthMax = parseInt(lengthSelect.value, 10);
+
+  lengthSelect.addEventListener('change', () => {
+  melodyLengthMax = parseInt(lengthSelect.value, 10);
+  });
+
+
+  let melodyBeats = 8;                 // chosen L (beats)
+  let rng = Math.random;
+
+  let activeMelody = null;  // { notes:[{start, dur, pitch, vel}], ticks }
+  let pendingMelody = null; // same shape; swapped at local==0
+
+  // Tracking for event emission
+  let lastTickProcessed = -1;
+  let noteGate = null; // { pitch, offAtAbsTick }
+
+  // ----------------------------
+  // MIDI (output on Channel 2)
+  // ----------------------------
+  let midiAccess = null;
+  let midiOutput = null;
+  const MIDI_CHANNEL = 2; // zero-based => 2 == Channel 3
+
+  function setMIDIStatus(txt) { midiStatus.textContent = txt; }
+
+  async function initMIDI() {
+    if (!navigator.requestMIDIAccess) {
+      setMIDIStatus('MIDI: unsupported');
+      console.warn('Web MIDI API not supported in this browser');
+      return;
+    }
+    try {
+      midiAccess = await navigator.requestMIDIAccess({ sysex:false });
+      populateMIDIOutputs();
+      midiAccess.onstatechange = populateMIDIOutputs;
+      setMIDIStatus(midiOutput ? `MIDI: ${midiOutput.name}` : 'MIDI: no outputs');
+    } catch (err) {
+      setMIDIStatus('MIDI: error');
+      console.error('MIDI access error', err);
+    }
+  }
+
+  function populateMIDIOutputs() {
+    const outs = Array.from(midiAccess.outputs.values());
+    // Rebuild select
+    midiOutSelect.innerHTML = '';
+    outs.forEach((out, idx) => {
+      const opt = document.createElement('option');
+      opt.value = out.id;
+      opt.textContent = out.name || `Output ${idx+1}`;
+      midiOutSelect.appendChild(opt);
+    });
+    // Choose current selection
+    if (outs.length) {
+      // Keep previous selection if possible, else first one
+      if (midiOutput) {
+        const found = outs.find(o => o.id === midiOutput.id);
+        midiOutput = found || outs[0];
+      } else {
+        midiOutput = outs[0];
+      }
+      midiOutSelect.value = midiOutput.id;
+      setMIDIStatus(`MIDI: ${midiOutput.name}`);
+    } else {
+      midiOutput = null;
+      setMIDIStatus('MIDI: no outputs');
+    }
+  }
+
+  midiOutSelect.addEventListener('change', () => {
+    if (!midiAccess) return;
+    const id = midiOutSelect.value;
+    const out = Array.from(midiAccess.outputs.values()).find(o => o.id === id);
+    midiOutput = out || null;
+    setMIDIStatus(midiOutput ? `MIDI: ${midiOutput.name}` : 'MIDI: no outputs');
+  });
+
+  btnRefreshMIDI.addEventListener('click', () => {
+    if (midiAccess) populateMIDIOutputs();
+    else initMIDI();
+  });
+
+  function sendMIDI(note, vel, on=true) {
+    if (!midiOutput) return;
+    const status = (on ? 0x90 : 0x80) | (MIDI_CHANNEL & 0x0F);
+    const msg = [status, note & 0x7F, vel & 0x7F];
+    midiOutput.send(msg);
+    // Compatibility: some devices prefer Note On with velocity 0 as Note Off
+    if (!on) {
+      const noteOnZero = (0x90 | (MIDI_CHANNEL & 0x0F));
+      midiOutput.send([noteOnZero, note & 0x7F, 0x00]);
+    }
+  }
+
+  // ----------------------------
+  // Generation
+  // ----------------------------
+  function choose(arr) { return arr[Math.floor(rng() * arr.length)] }
+  function randInt(a,b) { return Math.floor(rng()*(b-a+1))+a } // inclusive
+  function coin(p=0.5) { return rng() < p }
+
+  function nearestIndexInScale(pitch, scale) {
+    let best = 0, bestDist = Infinity;
+    for (let i=0;i<scale.length;i++) {
+      const d = Math.abs(scale[i] - pitch);
+      if (d < bestDist) { best=i; bestDist=d; }
+    }
+    return best;
+  }
+  function clamp(v,min,max){ return v<min?min:v>max?max:v }
+
+  function generateMelodyStructure() {
+    const allowedBeats = BEAT_OPTIONS.filter(b => b <= melodyLengthMax);
+    const melodyTicks = choose(allowedBeats) * 4;
+    melodyBeats = melodyTicks / 4;
+
+
+    const scale = buildScale(currentKey.tonic, currentKey.mode, 48, 72);
+    const tonicMidi = nearestScalePitch(midiFromTonic(currentKey.tonic, 4), scale);
+
+    const segments = melodyTicks / 16; // 4-beat segments
+    const segNoteCounts = Array.from({length:segments}, () => randInt(2,8));
+
+    const notes = [];
+    let lastPitch = tonicMidi;
+
+    for (let s=0; s<segments; s++) {
+      const segStart = s*16;
+      const need = segNoteCounts[s];
+      let placed = 0;
+      let t = segStart;
+
+      // In segment 0, force a start at local 0
+      if (s===0) {
+        let dur = choose(DUR_ALLOWED);
+        if (t + dur > segStart + 16) dur = (segStart + 16) - t;
+        const vel = randInt(85,110);
+        notes.push({ start:t, dur, pitch:lastPitch, vel });
+        placed++; t += dur;
+      }
+
+      while (placed < need && t < segStart + 16) {
+        const rest = (coin(0.7) ? 0 : randInt(1,3));
+        t += rest;
+        if (t >= segStart + 16) break;
+
+        let dur = choose(DUR_ALLOWED);
+        if (t + dur > segStart + 16) dur = (segStart + 16) - t;
+        if (dur <= 0) break;
+
+        const step = coin(0.7) ? (coin() ? +1 : -1)
+                   : (coin(0.7) ? (coin()? +2 : -2)
+                   : (coin()? +3 : -3));
+        const idx = nearestIndexInScale(lastPitch, scale);
+        let nextIdx = clamp(idx + step, 0, scale.length - 1);
+        let nextPitch = scale[nextIdx];
+
+        if (nextIdx <= 1 && coin(0.4)) nextPitch += 12;
+        if (nextIdx >= scale.length - 2 && coin(0.4)) nextPitch -= 12;
+        if (nextPitch < 48) nextPitch += 12;
+        if (nextPitch > 72) nextPitch -= 12;
+
+        const vel = randInt(80,108);
+        notes.push({ start:t, dur, pitch:nextPitch, vel });
+        lastPitch = nextPitch;
+        placed++;
+        t += dur;
+      }
+    }
+
+    // Safety: ensure first onset at 0
+    if (!notes.some(n => n.start === 0)) {
+      notes.unshift({ start:0, dur:Math.min(4, melodyTicks), pitch:tonicMidi, vel:randInt(90,112) });
+    }
+
+    // Clamp to loop end
+    for (const n of notes) {
+      const maxEnd = melodyTicks;
+      if (n.start + n.dur > maxEnd) n.dur = maxEnd - n.start;
+      if (n.dur < 1) n.dur = 1;
+    }
+
+    notes.sort((a,b)=> a.start - b.start || a.dur - b.dur);
+
+    return { notes, ticks:melodyTicks };
+  }
+
+  function applyNewMelodyNow(mel) {
+    activeMelody = mel;
+    pendingMelody = null;
+    noteGate = null;
+    reflectUI();
+    drawGrid();
+  }
+
+  // ----------------------------
+  // Event emission (Broadcast + MIDI)
+  // ----------------------------
+  function maybeEmit(countAbs) {
+    if (!activeMelody) return;
+    const local = countAbs % activeMelody.ticks;
+
+    // Swap pending at boundary before starts
+    if (pendingMelody && local === 0) {
+      applyNewMelodyNow(pendingMelody);
+    }
+
+    // NoteOff due?
+    if (noteGate && countAbs === noteGate.offAtAbsTick) {
+      chOut.postMessage({ type:'noteOff', tick: countAbs, pitch: noteGate.pitch });
+      sendMIDI(noteGate.pitch, 64, false); // MIDI Note Off (plus compatibility Note On 0)
+      noteGate = null;
+    }
+
+    // NoteOn if a note starts at this local tick (monophonic)
+    for (const n of activeMelody.notes) {
+      if (n.start === local) {
+        const ev = {
+          type: 'noteOn',
+          tick: countAbs,                  // absolute external count
+          pitch: n.pitch,
+          velocity: n.vel,
+          durationTicks: n.dur,
+          key: { tonic: currentKey.tonic, mode: currentKey.mode }
+        };
+        chOut.postMessage(ev);
+        sendMIDI(n.pitch, n.vel, true);   // MIDI Note On CH 2
+
+        const offAt = (countAbs + n.dur) % loopTicksExternal;
+        noteGate = { pitch: n.pitch, offAtAbsTick: offAt };
+        break;
+      }
+    }
+  }
+
+  // ----------------------------
+  // UI helpers
+  // ----------------------------
+  function reflectUI() {
+    if (!activeMelody) {
+      dbgBeats.textContent = '–';
+      dbgTicks.textContent = '–';
+      dbgNotes.textContent = '–';
+      return;
+    }
+    dbgBeats.textContent = String(melodyBeats);
+    dbgTicks.textContent = String(activeMelody.ticks);
+    dbgNotes.textContent = String(activeMelody.notes.length);
+  }
+
+  function drawGrid() {
+    g.clearRect(0,0,grid.width,grid.height);
+    if (!activeMelody) return;
+
+    const W = grid.width, H = grid.height;
+    const ticks = activeMelody.ticks;
+    const xPerTick = W / ticks;
+
+    // Pitch lanes 48..72
+    const pMin = 48, pMax = 72;
+    const rows = (pMax - pMin) + 1;
+    const yForPitch = (p) => {
+      const clamped = clamp(p, pMin, pMax);
+      const row = (pMax - clamped);
+      const hPer = H / rows;
+      return row * hPer;
+    };
+
+    // Grid lines each beat (4 ticks)
+    g.lineWidth = 1;
+    g.strokeStyle = '#eee';
+    for (let t=0; t<=ticks; t+=4) {
+      const x = Math.round(t * xPerTick) + 0.5;
+      g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke();
+    }
+
+    // Notes
+    for (const n of activeMelody.notes) {
+      const x = n.start * xPerTick;
+      const w = n.dur * xPerTick;
+      const y = yForPitch(n.pitch);
+      const h = Math.max(6, (H / rows) * 0.9);
+      g.fillStyle = '#5b8cff';
+      g.fillRect(x, y, w, h);
+    }
+
+    // Current position
+    const local = count % activeMelody.ticks;
+    const xNow = Math.round(local * xPerTick) + 0.5;
+    g.strokeStyle = '#ff4d4f';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(xNow, 0); g.lineTo(xNow, H); g.stroke();
+
+    // Debug labels
+    dbgLocal.textContent = String(local);
+  }
+
+  // ----------------------------
+  // Handlers
+  // ----------------------------
+chKey.onmessage = (e) => {
+  const msg = e.data;
+  if (!msg || msg.type !== 'key') return;
+  if (typeof msg.tonic !== 'string') return;
+
+  const mode = (msg.mode === 'major') ? 'major' : 'minor';
+  const newKey = { tonic: msg.tonic, mode };
+
+  // rien à faire si identique
+  if (
+    currentKey.tonic === newKey.tonic &&
+    currentKey.mode === newKey.mode
+  ) return;
+
+  const oldKey = currentKey;
+  currentKey = newKey;
+  dbgKey.textContent = `${newKey.tonic} ${newKey.mode}`;
+
+  if (activeMelody) {
+    // recoloration sans changer la structure
+    const recolored = recolorMelody(activeMelody, oldKey, newKey);
+    pendingMelody = recolored;
+  } else {
+    applyNewMelodyNow(generateMelodyStructure());
+  }
+
+  drawGrid();
+};
+
+
+
+  chTicker.onmessage = (e) => {
+    const m = e.data;
+    if (!m || m.type !== 'tick') return;
+
+    count   = m.count|0;               // 0..127
+    bpm     = m.bpm ?? bpm;
+    subdiv  = m.subdiv ?? subdiv;
+
+    dbgCount.textContent = String(count);
+
+    if (!activeMelody) {
+      applyNewMelodyNow(generateMelodyStructure());
+    }
+
+    if (count !== lastTickProcessed) {
+      maybeEmit(count);
+      lastTickProcessed = count;
+    }
+
+    drawGrid();
+    statusEl.textContent = 'running';
+  };
+
+  btnGenerate.addEventListener('click', () => {
+    rng = rngFromSeed(seedInput.value.trim());
+    const fresh = generateMelodyStructure();
+    if (activeMelody) {
+      pendingMelody = fresh;
+      statusEl.textContent = 'queued (swap @ loop 0)';
+    } else {
+      applyNewMelodyNow(fresh);
+      statusEl.textContent = 'ready';
+    }
+    reflectUI();
+    drawGrid();
+  });
+
+  // Init
+  rng = rngFromSeed('');
+  dbgKey.textContent = `${currentKey.tonic} minor`;
+  initMIDI(); // kick off MIDI (optional; harmless if unsupported)
+})();
+</script>
+</body>
+</html>

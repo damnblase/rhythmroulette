@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Shaker</title>
+
+<style>
+/* MINIMAL WHITE UI */
+:root{
+  --ui-bg: #ffffff;
+  --ui-fg: #000000;
+
+  --ui-border: #000000;
+  --ui-radius: 10px;
+
+  --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+  --ui-font-size: 14px;
+  --ui-line-height: 1.25;
+
+  --ui-pad-y: 10px;
+  --ui-pad-x: 12px;
+
+  /* increased spacing so controls never touch */
+  --ui-gap: 18px;
+  --ui-page-pad: 18px;
+  --ui-max-width: 100%;
+}
+
+html, body{
+  margin:0;
+  height:100%;
+  background: var(--ui-bg);
+  color: var(--ui-fg);
+  font-family: var(--ui-font);
+  font-size: var(--ui-font-size);
+  line-height: var(--ui-line-height);
+  font-weight: 400;
+}
+
+.minui-wrap{
+  max-width: var(--ui-max-width);
+  padding: var(--ui-page-pad);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--ui-gap);
+}
+
+/* Force consistent spacing even if legacy .row styles exist */
+.row{
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.row + .row{
+  margin-top: var(--ui-gap) !important; /* vertical separation between rows */
+}
+
+.minui-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+
+  /* explicit row/column gaps so wrapped items never touch */
+  column-gap: var(--ui-gap);
+  row-gap: var(--ui-gap);
+}
+
+.minui-wrap select,
+.minui-wrap button,
+.minui-wrap input[type="number"],
+.minui-wrap input[type="text"]{
+  background: var(--ui-bg);
+  color: var(--ui-fg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: var(--ui-pad-y) var(--ui-pad-x);
+  font: inherit;
+  line-height: inherit;
+  box-shadow: none;
+  appearance: auto;
+  margin: 0 !important; /* avoid legacy margins causing collisions */
+}
+
+.minui-wrap button{
+  cursor:pointer;
+  user-select:none;
+  white-space: nowrap;
+}
+
+.minui-wrap select:disabled,
+.minui-wrap button:disabled,
+.minui-wrap input:disabled{
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Sliders — BLUE */
+.minui-wrap input[type="range"]{
+  width: min(360px, 100%);
+  accent-color: #1a73e8;
+  margin: 0 !important;
+}
+
+/* Labels — normal weight */
+label{
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* Utilities */
+.minui-hidden{ display:none !important; }
+
+.minui-flatcard{
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Make the main box a grid with spacing so MIDI row never touches regen row */
+.box.minui-flatcard{
+  display: grid;
+  gap: var(--ui-gap);
+}
+
+/* Hide everything by default */
+.minui-scope{ display:none !important; }
+
+/* Explicitly keep only allowed controls */
+.minui-keep-output,
+.minui-keep-regen,
+.minui-keep-density,
+.minui-keep-velfloor{
+  display:flex !important;
+}
+
+/* Remove legacy visual clutter */
+.box{
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.wrap h1,
+.wrap .note,
+.wrap .pill,
+.wrap .lights,
+.wrap details,
+.wrap summary,
+.wrap pre{
+  display:none !important;
+}
+
+/* MIDI enable overlay — invisible but clickable (style only) */
+.minui-keep-output{
+  position: relative;
+}
+
+.minui-keep-output #midiEnableBtn{
+  position:absolute;
+  inset:0;
+  z-index:2;
+  opacity:0;
+  display:block !important;
+  border:0;
+  background:transparent;
+}
+
+.minui-keep-output:has(select:disabled) #midiEnableBtn{
+  pointer-events:auto;
+}
+.minui-keep-output:has(select:not(:disabled)) #midiEnableBtn{
+  pointer-events:none;
+}
+
+.minui-keep-output select{
+  position:relative;
+  z-index:1;
+}
+
+/* =========================
+   SINGLE-FILE SPACING CONTRACT
+   ========================= */
+:root{
+  --gap: 10px;
+
+  /* override any existing spacing tokens to use the single contract */
+  --ui-gap: var(--gap);
+  --ui-page-pad: var(--gap);
+  --ui-pad-y: var(--gap);
+  --ui-pad-x: var(--gap);
+}
+
+/* Remove default element margins that affect vertical rhythm */
+h1,h2,h3,h4,h5,h6,p{
+  margin: 0 !important;
+}
+
+/* No ad-hoc margins for vertical spacing: rely on grid/flex gaps only */
+.row + .row{
+  margin-top: 0 !important;
+}
+
+/* Ensure all layout containers use the contract gap */
+.minui-wrap{
+  gap: var(--gap) !important;
+  padding: var(--gap) !important;
+}
+
+.box.minui-flatcard{
+  gap: var(--gap) !important;
+}
+
+.minui-row{
+  column-gap: var(--gap) !important;
+  row-gap: var(--gap) !important;
+}
+</style>
+</head>
+
+<body>
+<div class="wrap minui-wrap">
+
+  <div class="box minui-flatcard">
+
+    <!-- MIDI OUTPUT -->
+    <div class="row minui-row minui-keep-output">
+      <button id="midiEnableBtn">Enable MIDI</button>
+      <label for="outputSel">MIDI Output</label>
+      <select id="outputSel" disabled></select>
+      <span id="midiStatus" class="minui-hidden"></span>
+    </div>
+
+    <!-- Duplicate kept but hidden -->
+    <div class="row minui-row minui-scope">
+      <label for="outputSel">MIDI Output</label>
+      <select id="outputSel" disabled></select>
+    </div>
+
+    <!-- REGENERATE -->
+    <div class="row minui-row minui-keep-regen">
+      <button id="regenBtn">Regenerate Pattern</button>
+      <button id="panicBtn" class="minui-hidden">Panic</button>
+    </div>
+
+    <div class="row minui-row minui-scope">
+      <button id="regenBtn">Regenerate Pattern</button>
+    </div>
+
+    <!-- NOTE DENSITY -->
+    <div class="row minui-row minui-keep-density">
+      <label for="density">Note Density</label>
+      <input id="density" type="range" min="1" max="100" step="1" value="70" />
+      <span id="densityVal" class="minui-hidden">70%</span>
+    </div>
+
+    <!-- VELOCITY FLOOR -->
+    <div class="row minui-row minui-keep-velfloor">
+      <label for="velFloor">Velocity Floor</label>
+      <input id="velFloor" type="range" min="27" max="127" step="1" value="45" />
+      <span id="velFloorVal" class="minui-hidden">45 → 127</span>
+    </div>
+
+    <div class="row minui-row minui-scope">
+      <div class="lights" id="beatLights"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(() => {
+  const TICKER_CHANNEL_NAME = 'internal-ticker';
+  const MIDI_NOTE = 60;
+  const MIDI_CHANNEL_1_BASED = 6;
+  const MIDI_CH = MIDI_CHANNEL_1_BASED - 1;
+  const GATE_MS = 45;
+
+  let globalSubTick = 0;
+  let loopLength = 4;
+  let pattern = [];
+
+  const $ = (s) => document.querySelector(s);
+  const midiEnableBtn = $('#midiEnableBtn');
+  const outputSel     = $('#outputSel');
+  const midiStatus    = $('#midiStatus');
+  const regenBtn      = $('#regenBtn');
+  const panicBtn      = $('#panicBtn');
+  const density       = $('#density');
+  const densityVal    = $('#densityVal');
+  const velFloor      = $('#velFloor');
+  const velFloorVal   = $('#velFloorVal');
+
+  let midiAccess = null;
+  let midiOut = null;
+
+  async function enableMIDI(){
+    try{
+      midiAccess = await navigator.requestMIDIAccess({ sysex:false });
+      midiAccess.onstatechange = updateOutputsSelect;
+      updateOutputsSelect();
+      outputSel.disabled = !midiOut;
+    }catch(e){
+      console.error(e);
+    }
+  }
+
+  function updateOutputsSelect(){
+    outputSel.innerHTML = '';
+    if(!midiAccess) return;
+    const outs = Array.from(midiAccess.outputs.values());
+    outs.forEach(o=>{
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = o.name || 'MIDI Output';
+      outputSel.appendChild(opt);
+    });
+    if(outs.length){
+      midiOut = outs[0];
+      outputSel.value = outs[0].id;
+      outputSel.disabled = false;
+    }
+  }
+
+  outputSel.addEventListener('change', ()=>{
+    if(!midiAccess) return;
+    midiOut = Array.from(midiAccess.outputs.values()).find(o=>o.id===outputSel.value) || null;
+  });
+
+  function sendNoteOn(n,v){
+    if(midiOut) midiOut.send([0x90+MIDI_CH, n&127, v&127]);
+  }
+  function sendNoteOff(n){
+    if(midiOut) midiOut.send([0x80+MIDI_CH, n&127, 0]);
+  }
+  function allNotesOff(){
+    if(midiOut){
+      midiOut.send([0xB0+MIDI_CH,123,0]);
+      midiOut.send([0x80+MIDI_CH,MIDI_NOTE,0]);
+    }
+  }
+
+  function regeneratePattern(){
+    const lengths=[4,8,16];
+    loopLength=lengths[Math.floor(Math.random()*lengths.length)];
+    const p = density.value/100;
+    const vMin = +velFloor.value;
+    pattern=[];
+    for(let i=0;i<loopLength;i++){
+      pattern.push({
+        on: Math.random()<p,
+        vel: Math.floor(Math.random()*(127-vMin+1))+vMin
+      });
+    }
+  }
+
+  const chan = new BroadcastChannel(TICKER_CHANNEL_NAME);
+  chan.onmessage = (ev)=>{
+    const m=ev.data||{};
+    let sub = m.sub ?? m.subIndex;
+    if(sub==null) return;
+    globalSubTick++;
+    const step = globalSubTick % loopLength;
+    const s = pattern[step];
+    if(s?.on){
+      sendNoteOn(MIDI_NOTE, s.vel);
+      setTimeout(()=>sendNoteOff(MIDI_NOTE), GATE_MS);
+    }
+  };
+
+  midiEnableBtn.addEventListener('click', enableMIDI);
+  regenBtn.addEventListener('click', regeneratePattern);
+  panicBtn.addEventListener('click', allNotesOff);
+
+  density.addEventListener('input', ()=> densityVal.textContent=`${density.value}%`);
+  velFloor.addEventListener('input', ()=> velFloorVal.textContent=`${velFloor.value} → 127`);
+
+  regeneratePattern();
+
+  if(!('requestMIDIAccess' in navigator)){
+    midiEnableBtn.disabled = true;
+    outputSel.disabled = true;
+  }
+})();
+</script>
+</body>
+</html>

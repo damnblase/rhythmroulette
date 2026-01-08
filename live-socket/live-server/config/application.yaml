@@ -1,0 +1,10 @@
+name: live
+author: ""
+clients:
+  live:
+    runtime: node
+  controller:
+    runtime: browser
+    default: true
+  live-blase:
+    runtime: node
