@@ -15,7 +15,7 @@ Pour la page web :
 - Lancer le terminal
 - Aller au bon dossier : taper cd puis glisser le dossier RhythmRoulette, puis return
 - taper ls, puis return pour vérifier qu'on est dans le bon dossier (doit afficher la liste des pages html)
-- taper http-sever -g 8001, puis return. Le serveur http doit se lancer
+- taper http-server -p 8001, puis return. Le serveur http doit se lancer
 - dans google chrome, taper 127.0.0.1:8001 => on doit charger la page
 
 
