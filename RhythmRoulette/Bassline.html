@@ -79,7 +79,6 @@
   input[type="range"]{
     accent-color: var(--ui-fg);
   }
-
 </style>
 </head>
 <body>
@@ -100,8 +99,8 @@
       <button id="genBtn">Generate Bassline</button>
       <span class="pill">Pattern len: <span id="patLenOut" class="mono">—</span></span>
       <span class="pill">Density: <span id="densityOut" class="mono">—</span></span>
-      <span class="pill">Mode: <span id="srcModeOut" class="mono">MIDI In</span></span>
-      <button id="toggleSrcBtn" class="small">Toggle Chord Source</button>
+      <span class="pill">Mode: <span id="srcModeOut" class="mono">MIDI Chords + Key BC</span></span>
+      <button id="toggleSrcBtn" class="small" disabled>Toggle Chord Source</button>
     </div>
 
     <div class="row">
@@ -122,6 +121,7 @@
       <span class="pill">tick <span id="tickOut" class="mono">—</span>/127</span>
       <span class="pill">bpm <span id="bpmOut" class="mono">—</span></span>
       <span class="pill">subdiv <span id="subdivOut" class="mono">—</span></span>
+      <span class="pill">Key <span id="keyOut" class="mono">—</span></span>
       <span class="pill">Chord <span id="chordOut" class="mono">[]</span></span>
       <span class="pill">Root <span id="rootOut" class="mono">—</span></span>
       <span class="pill">Last chord tick <span id="lastChordTickOut" class="mono">—</span></span>
@@ -143,26 +143,24 @@
   const ROOT_CH  = 1;                 // 0-based -> Channel 2 (root)
   const CHORD_BC_NAME = 'harmony-chords'; // Optional future BC chord feed
 
-  // Key feed (from Harmony.html). If no key data is present, Distance is effectively forced to 0.
-  // IMPORTANT: This MUST match the exact BroadcastChannel used by Harmony.html.
-  // Harmony.html publishes to 'music-key'.
+  // Key feed (from Harmony.html)
   const KEY_BC_NAME = 'music-key';
 
-  // Note duration clamp (ms) — increased to support legato at slower BPM
+  // Note duration clamp (ms)
   const NOTE_MS_MIN = 70;
   const NOTE_MS_MAX = 5000;
 
   // Legato factor range: % of time until next hit (mapped from slider 0..100)
-  const LEGATO_FACTOR_MIN = 0.30; // staccato-ish
-  const LEGATO_FACTOR_MAX = 0.99; // near-touching
+  const LEGATO_FACTOR_MIN = 0.30;
+  const LEGATO_FACTOR_MAX = 0.99;
 
-  // Bass register target
+  // Bass register target base (NOTE: distance no longer affects register)
   const BASS_LO = 36; // C2
-  const BASS_HI = 52; // E3 (roughly)
+  const BASS_HI_BASE = 52; // E3 (roughly).
 
-  // Note repetition bias: keep the same pitch more often
-  const REUSE_PROB_BEFORE_TWO = 0.88; // strongly encourage at least 2 repeats
-  const REUSE_PROB_AFTER_TWO  = 0.68; // still grounded after that
+  // Note repetition bias
+  const REUSE_PROB_BEFORE_TWO = 0.88;
+  const REUSE_PROB_AFTER_TWO  = 0.68;
 
   // =========================================================
   // DOM
@@ -179,6 +177,7 @@
     tickOut: $('#tickOut'),
     bpmOut: $('#bpmOut'),
     subdivOut: $('#subdivOut'),
+    keyOut: $('#keyOut'),
     chordOut: $('#chordOut'),
     rootOut: $('#rootOut'),
     lastChordTickOut: $('#lastChordTickOut'),
@@ -211,32 +210,32 @@
     density: 40,
 
     // Chord input
-    chordSource: 'midi', // 'midi' | 'bc'
-    chordNotesSet: new Set(),        // current chord tones (absolute MIDI notes from input)
-    currentChordNotes: [],           // sorted unique
-    currentRootNote: -1,             // absolute MIDI note
+    chordSource: 'midi', // kept for compatibility; mode switching removed
+    chordNotesSet: new Set(),
+    currentChordNotes: [],
+    currentRootNote: -1,
     lastChordSignature: '',
     lastChordNotesSig: '',
     lastChordAttackSig: '',
     lastChordAttackMs: 0,
     needChordToneNext: true,
     lastChordChangeTick: null,
-    chordChangeTicks: [0],           // observed within loop (tick indices), always include 0
+    chordChangeTicks: [0],
 
-    // Key input (from Harmony)
+    // Key input
     currentKeyRoot: null,            // pitch class 0..11
-    currentScaleType: null,          // string like 'major'/'minor' (optional)
+    currentScaleType: null,          // 'major'/'minor'/...
     currentScalePCSet: null,         // Set<pitchClass>
     hasKey: false,
+    currentKeyLabel: '—',
 
     // Pattern
-    patternLen: 32,                  // 16/32/64
-    hitLevel: [],                    // null OR 0..1 importance rank (lower = more important)
+    patternLen: 32,
+    hitLevel: [],
     forcedHits: new Set(),
     roleMask: [],
     randA: [],
     randB: [],
-    densityLabel: '—',
 
     // Playback
     activeBassNote: null,
@@ -245,6 +244,9 @@
     // Repetition / grounding
     lastChosenBassNote: null,
     lastChosenRepeatCount: 0,
+
+    // Generation seed
+    patternSeed: 0,
   };
 
   // =========================================================
@@ -353,9 +355,8 @@
     allNotesOffChannel(ch) {
       if (!this.out) return;
       const c = (ch & 0x0F);
-      // CC123 All Notes Off + CC120 All Sound Off for belt-and-suspenders.
-      this.out.send([0xB0 + c, 123, 0]);
-      this.out.send([0xB0 + c, 120, 0]);
+      this.out.send([0xB0 + c, 123, 0]); // All Notes Off
+      this.out.send([0xB0 + c, 120, 0]); // All Sound Off
     }
   };
 
@@ -375,9 +376,8 @@
     }, 8);
   }
 
+  // Always listening to MIDI chord/root (no mode switching)
   function onMIDIMessage(ev) {
-    if (state.chordSource !== 'midi') return;
-
     const data = ev.data || [];
     if (data.length < 2) return;
 
@@ -426,7 +426,6 @@
     const chordNotesSig = chordNotes.join(',');
     const chordChanged = (chordNotesSig !== state.lastChordNotesSig);
 
-    // Keep full signature for debug/UI, but treat "chord changed" as chord-content change (not root-only updates).
     const sig = chordSignature(chordNotes, state.currentRootNote);
     const sigChanged = (sig !== state.lastChordSignature);
     if (sigChanged) state.lastChordSignature = sig;
@@ -438,10 +437,9 @@
       if (t >= 0) recordChordChangeTick(t);
       renderChordUI();
 
-      // Requirement: immediate bass note on chord-content change (independent of rhythm mask)
+      // Immediate chord-change attack note (independent of rhythm mask)
       chordChangeAttack('midi');
     } else {
-      // Root-only updates still refresh UI, but must not retrigger the chord-change attack.
       renderChordUI();
     }
   }
@@ -457,32 +455,35 @@
     state.lastChordAttackSig = sig;
     state.lastChordAttackMs = now;
 
-    // 1) Stop/cut off current bass note immediately
+    // Cut off current bass immediately
     if (state.activeBassOffTimer) { clearTimeout(state.activeBassOffTimer); state.activeBassOffTimer = null; }
     if (state.activeBassNote != null) {
       MIDI.noteOff(state.activeBassNote, BASS_MIDI_CH);
       state.activeBassNote = null;
     }
-    // Avoid overlap: hard stop bass channel only (do NOT kill Harmony chords).
     MIDI.allNotesOffChannel(BASS_MIDI_CH);
 
-    // 2) Start a new bass note immediately: chord tones only, strongly prefer root
-    // Reset grounding to "first note after chord change"
+    // Reset grounding
     state.lastChosenBassNote = null;
     state.lastChosenRepeatCount = 0;
 
+    // New note: chord tones only, strongly prefer root
     const rootAbs = (state.currentRootNote >= 0) ? state.currentRootNote : chord[0];
-    const root = shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI);
+
+    // NOTE: distance no longer controls register. Preserve existing "dist=0 plays exact root"
+    // behavior, otherwise shift into fixed bass register.
+    const dist = effectiveDistance();
+    const { lo, hi } = currentRegisterLimits(rootAbs);
+    const root = (dist === 0) ? (rootAbs|0) : shiftIntoRegister(rootAbs, lo, hi);
 
     MIDI.noteOn(root, 96, BASS_MIDI_CH);
     state.activeBassNote = root;
 
-    // Treat this as the first note after change
     state.needChordToneNext = false;
     state.lastChosenBassNote = root;
     state.lastChosenRepeatCount = 1;
 
-    // Schedule note-off using current Legato setting, relative to next planned hit
+    // Schedule note-off from current position
     const len = state.patternLen|0;
     if (len > 0 && state.lastTickCount >= 0) {
       const p = ((state.lastTickCount % len) + len) % len;
@@ -511,6 +512,7 @@
 
   // =========================================================
   // BroadcastChannel chord source (optional)
+  // (kept, but mode switching is removed; this feed is inactive)
   // =========================================================
   function initChordBC() {
     const bc = new BroadcastChannel(CHORD_BC_NAME);
@@ -561,15 +563,20 @@
       state.currentScaleType = parsed.scaleType;
       state.currentScalePCSet = parsed.pcSet;
       state.hasKey = !!(parsed.pcSet && parsed.pcSet.size);
+      state.currentKeyLabel = parsed.label || '—';
+      renderKeyUI();
     };
   }
 
   function parseKeyMessage(m) {
     const type = (typeof m.type === 'string') ? m.type.toLowerCase() : '';
-    const mightBeKey = type.includes('key') || type.includes('scale') || ('key' in m) || ('scale' in m) || ('pcSet' in m) || ('pitchClasses' in m) || ('tonicPc' in m) || ('mode' in m);
-    if (!mightBeKey) return null;
 
-    // 1) If explicit pitch-class set exists, use it
+    const isKeyMsg = (type === 'key') || (type.includes('key') && ('tonic' in m || 'tonicPc' in m || 'mode' in m));
+    if (!isKeyMsg) {
+      const mightBeKey = type.includes('key') || type.includes('scale') || ('key' in m) || ('scale' in m) || ('pcSet' in m) || ('pitchClasses' in m) || ('tonicPc' in m) || ('mode' in m);
+      if (!mightBeKey) return null;
+    }
+
     const pcsArr = Array.isArray(m.pcSet) ? m.pcSet
       : Array.isArray(m.pitchClasses) ? m.pitchClasses
       : Array.isArray(m.scalePCs) ? m.scalePCs
@@ -579,28 +586,43 @@
       const pcSet = new Set(pcsArr.map(x => ((x|0) % 12 + 12) % 12));
       const root = extractKeyRoot(m);
       const scaleType = extractScaleType(m);
-      return { root, scaleType, pcSet };
+      const label = buildKeyLabel(m, root, scaleType);
+      return { root, scaleType, pcSet, label };
     }
 
-    // 2) Parse key string like "C minor"
     if (typeof m.key === 'string') {
       const out = parseKeyString(m.key);
       if (out) return out;
     }
 
-    // 3) Root + scaleType -> build set (Harmony.html uses tonicPc + mode)
     const root = extractKeyRoot(m);
     const scaleType = extractScaleType(m);
     if (root == null || !scaleType) return null;
+
     const pcSet = buildScalePCSet(root, scaleType);
     if (!pcSet || !pcSet.size) return null;
-    return { root, scaleType, pcSet };
+
+    const label = buildKeyLabel(m, root, scaleType);
+    return { root, scaleType, pcSet, label };
+  }
+
+  function buildKeyLabel(m, rootPc, scaleType) {
+    let tonicName = null;
+    if (typeof m.tonic === 'string' && m.tonic.trim()) tonicName = m.tonic.trim();
+    if (!tonicName && rootPc != null) tonicName = pcToNoteName(rootPc);
+    const mode = (typeof m.mode === 'string' && m.mode.trim()) ? m.mode.trim().toLowerCase()
+               : (scaleType ? String(scaleType).trim().toLowerCase().replace(/_/g,' ') : '');
+    if (!tonicName) return '—';
+    if (!mode) return tonicName;
+    return `${tonicName} ${mode}`;
+  }
+
+  function pcToNoteName(pc) {
+    const names = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+    return names[((pc|0)%12+12)%12] || 'C';
   }
 
   function extractKeyRoot(m) {
-    // Harmony.html publishes:
-    // { type:'key', tonic:'C', mode:'major'|'minor', tonicPc:<0..11>, tonicMidi:<midi> }
-    // Accept either pitch-class numbers or note-name strings.
     const numCand = (
       (typeof m.root === 'number' ? m.root : null) ??
       (typeof m.tonicPc === 'number' ? m.tonicPc : null) ??
@@ -615,18 +637,14 @@
       return ((n % 12) + 12) % 12;
     }
 
-    // String tonic like "C", "Eb", "F#"
     if (typeof m.tonic === 'string') {
       const pc = noteNameToPc(String(m.tonic).trim());
       if (pc != null) return pc;
     }
-
-    // String root like "C#", "Bb"
     if (typeof m.rootName === 'string') {
       const pc = noteNameToPc(String(m.rootName).trim());
       if (pc != null) return pc;
     }
-
     return null;
   }
 
@@ -653,7 +671,7 @@
     const scaleType = rest ? rest.replace(/\s+/g,'_') : 'major';
     const pcSet = buildScalePCSet(rootPc, scaleType);
     if (!pcSet || !pcSet.size) return null;
-    return { root: rootPc, scaleType, pcSet };
+    return { root: rootPc, scaleType, pcSet, label: `${letter+accidental} ${scaleType.replace(/_/g,' ')}` };
   }
 
   function noteNameToPc(name) {
@@ -684,6 +702,10 @@
     const pat = patterns[type] || patterns[type.replace(/^ionian$/,'major')] || patterns[type.replace(/^aeolian$/,'minor')];
     if (!pat) return null;
     return new Set(pat.map(x => (r + x) % 12));
+  }
+
+  function renderKeyUI() {
+    el.keyOut.textContent = state.hasKey ? (state.currentKeyLabel || '—') : '—';
   }
 
   // =========================================================
@@ -725,8 +747,6 @@
   // Bass pattern generation
   // =========================================================
   function choice(arr){ return arr[(Math.random()*arr.length)|0]; }
-  function randInt(min,max){ return ((Math.random()*(max-min+1))|0) + min; }
-  function randFloat(min,max){ return min + Math.random() * (max - min); }
 
   function buildDefaultMasks(len) {
     return {
@@ -879,7 +899,7 @@
   }
 
   // =========================================================
-  // Playback: chord-safe + repetition + legato
+  // Playback: Distance = harmonic eligibility ONLY (rebuilt)
   // =========================================================
   function chordPitchClassSet() {
     const chord = state.currentChordNotes || [];
@@ -888,15 +908,111 @@
     return pcs;
   }
 
+  function effectiveDistance() {
+    return clamp(state.distance|0, 0, 100);
+  }
+
+  function smoothstep01(t) {
+    const x = clamp(t, 0, 1);
+    return x * x * (3 - 2 * x);
+  }
+
+  // Register limits are fixed; distance MUST NOT affect register.
+  function currentRegisterLimits(rootAbs) {
+    const lo = BASS_LO;
+    const baseTop = Math.max(BASS_HI_BASE, (rootAbs|0));
+    const hi = clamp(baseTop, 0, 127);
+    return { lo, hi };
+  }
+
+  function currentBassHi() {
+    const rootAbs = (state.currentRootNote >= 0)
+      ? state.currentRootNote
+      : ((state.currentChordNotes && state.currentChordNotes[0] != null) ? state.currentChordNotes[0] : 48);
+    return currentRegisterLimits(rootAbs).hi;
+  }
+
+  function intervalWeight(delta) {
+    // Bias closer scale/chord tones slightly, but eligibility is governed by Distance.
+    const d = ((delta|0) % 12 + 12) % 12;
+    if (d === 0) return 1.00;
+    if (d === 7) return 0.92;
+    if (d === 5) return 0.80;
+    if (d === 3 || d === 4) return 0.86;
+    if (d === 2 || d === 9) return 0.70;
+    if (d === 10 || d === 11) return 0.66;
+    return 0.58;
+  }
+
+  function pickWeightedDeterministic(list, weights, r) {
+    if (!list || !list.length) return null;
+    if (!weights || weights.length !== list.length) return pickFromListDeterministic(list, r);
+
+    let sum = 0;
+    for (let i=0; i<weights.length; i++) sum += Math.max(0, weights[i] || 0);
+    if (sum <= 0) return pickFromListDeterministic(list, r);
+
+    let x = clamp(r, 0, 0.999999) * sum;
+    for (let i=0; i<list.length; i++) {
+      x -= Math.max(0, weights[i] || 0);
+      if (x <= 0) return list[i];
+    }
+    return list[list.length - 1];
+  }
+
+  function pickFromListDeterministic(list, r) {
+    if (!list || !list.length) return null;
+    const idx = Math.min(list.length - 1, Math.max(0, Math.floor(clamp(r,0,0.999999) * list.length)));
+    return list[idx];
+  }
+
+  function shiftIntoRegister(note, lo, hi) {
+    let n = note|0;
+    while (n > hi) n -= 12;
+    while (n < lo) n += 12;
+    if (n < 0) n = 0;
+    if (n > 127) n = 127;
+    return n;
+  }
+
+  function isAllowedPcForDistance(pc, rootPc, chordPCs, dist) {
+    if (dist <= 0) return pc === rootPc;
+    if (dist < 50) return chordPCs.has(pc);
+    // dist >= 50: chord tones + key scale (if known), but we still enforce "no outside all sets"
+    if (chordPCs.has(pc)) return true;
+    if (state.hasKey && state.currentScalePCSet && state.currentScalePCSet.has(pc)) return true;
+    return false;
+  }
+
+  function distanceCategoryWeights(dist, hasScaleOnly, hasChordOther) {
+    // Spec envelope:
+    // 0%: root only
+    // 0..50: gradually introduce non-root chord tones
+    // 50..100: gradually introduce scale-only tones
+    if (dist <= 0) return { wRoot: 1, wChordOther: 0, wScaleOnly: 0 };
+
+    const tChord = smoothstep01(Math.min(dist, 50) / 50);           // 0..1 over 0..50
+    const tScale = smoothstep01(Math.max(0, dist - 50) / 50);       // 0..1 over 50..100
+
+    // Use a simple normalized weight model:
+    // - Root is always present.
+    // - Chord-other weight grows from 0..1 over 0..50.
+    // - Scale-only weight grows from 0..1 over 50..100.
+    let wRoot = 1.0;
+    let wChordOther = hasChordOther ? tChord : 0.0;
+    let wScaleOnly = hasScaleOnly ? tScale : 0.0;
+
+    // If we have no other categories available, keep root dominant by construction.
+    return { wRoot, wChordOther, wScaleOnly };
+  }
+
   function pickBassNote(roleChar, globalTick) {
     const chord = state.currentChordNotes || [];
     if (!chord.length) return null;
 
     const rootAbs = (state.currentRootNote >= 0) ? state.currentRootNote : chord[0];
+    const rootPc = ((rootAbs|0) % 12 + 12) % 12;
     const chordPCs = chordPitchClassSet();
-
-    const in16 = globalTick % 16;
-    const strong = (in16 === 0 || in16 === 8 || in16 === 4 || in16 === 12);
 
     const len = state.patternLen|0;
     const p = (len > 0) ? (globalTick % len) : 0;
@@ -904,24 +1020,47 @@
     const rB = (state.randB && state.randB.length) ? (state.randB[p] ?? 0) : 0;
     const rC = u32ToUnit(hashU32(state.patternSeed ^ 0xC001D00D, (globalTick|0) ^ (p<<16)));
 
-    const forceChord = !!state.needChordToneNext;
+    const dist = effectiveDistance();
 
-    const root = shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI);
-
-    // Root anchoring: strong beats and role='R' bias toward root regardless of Distance.
-    const rootBias = strong ? 0.85 : ((roleChar === 'R') ? 0.70 : 0.55);
-    if (rA < rootBias) {
+    // Distance = 0: root ONLY (exact root from Ch 2)
+    if (dist === 0) {
       state.needChordToneNext = false;
-      updateRepeatMemory(root);
-      return root;
+      state.lastChosenBassNote = rootAbs|0;
+      state.lastChosenRepeatCount = 1;
+      return rootAbs|0;
     }
 
-    // --- Reuse bias (grounded, repetitive) ---
+    const { lo, hi } = currentRegisterLimits(rootAbs);
+    const rootReg = shiftIntoRegister(rootAbs, lo, hi);
+
+    // Keep existing grounding behavior: after chord change, strongly prefer root
+    if (state.needChordToneNext) {
+      state.needChordToneNext = false;
+      updateRepeatMemory(rootReg);
+      return rootReg;
+    }
+
+    // Candidate PC sets
+    const chordOtherPCs = new Set();
+    for (const pc of chordPCs) if (pc !== rootPc) chordOtherPCs.add(pc);
+
+    let scaleOnlyPCs = new Set();
+    if (state.hasKey && state.currentScalePCSet && state.currentScalePCSet.size) {
+      for (const pc of state.currentScalePCSet) if (!chordPCs.has(pc)) scaleOnlyPCs.add(pc);
+    }
+
+    // Build register candidates (fixed register; distance does NOT change it)
+    const chordOtherCand = buildRegisterCandidatesFromPCSet(chordOtherPCs, rootAbs, lo, hi);
+    const scaleOnlyCand = buildRegisterCandidatesFromPCSet(scaleOnlyPCs, rootAbs, lo, hi);
+
+    const hasChordOther = chordOtherCand.length > 0;
+    const hasScaleOnly  = scaleOnlyCand.length > 0;
+
+    // Repetition is allowed ONLY if the repeated note remains eligible at current distance.
     const prev = state.lastChosenBassNote;
-    if (!forceChord && prev != null) {
+    if (prev != null) {
       const prevPc = ((prev|0) % 12 + 12) % 12;
-      const prevKeySafe = chordPCs.has(prevPc) || (state.hasKey && state.currentScalePCSet && state.currentScalePCSet.has(prevPc));
-      if (prevKeySafe) {
+      if (isAllowedPcForDistance(prevPc, rootPc, chordPCs, dist)) {
         const prob = (state.lastChosenRepeatCount < 2) ? REUSE_PROB_BEFORE_TWO : REUSE_PROB_AFTER_TWO;
         if (rC < prob) {
           state.lastChosenRepeatCount++;
@@ -930,41 +1069,31 @@
       }
     }
 
-    const chordCand = buildRegisterCandidatesFromPCSet(chordPCs, rootAbs);
-    const chordChoice = pickFromListDeterministic(chordCand, rB) ?? root;
+    // Decide which eligibility bucket we draw from according to the distance envelope
+    const { wRoot, wChordOther, wScaleOnly } = distanceCategoryWeights(dist, hasScaleOnly, hasChordOther);
+    const sum = Math.max(1e-9, (wRoot + wChordOther + wScaleOnly));
+    const x = clamp(rA, 0, 0.999999) * sum;
 
-    // Distance: controls the allowed pitch set.
-    // If key data is missing, force chord-only behavior (effectiveDistance = 0).
-    const effectiveDistance = (state.hasKey && state.currentScalePCSet && state.currentScalePCSet.size) ? (state.distance|0) : 0;
+    let chosen = null;
 
-    // User requirement: at Distance = 0, play ONLY the root note (Channel 2 root).
-    // (Fallback to chord[0] if root is missing.)
-    if (effectiveDistance === 0) {
-      state.needChordToneNext = false;
-      updateRepeatMemory(root);
-      return root;
+    if (x < wRoot || (!hasChordOther && !hasScaleOnly)) {
+      chosen = rootReg;
+    } else if (x < (wRoot + wChordOther) || !hasScaleOnly) {
+      // Choose from non-root chord tones
+      const weights = chordOtherCand.map(n => intervalWeight((((n|0)%12+12)%12 - rootPc + 12)%12));
+      chosen = pickWeightedDeterministic(chordOtherCand, weights, rB);
+      if (chosen == null) chosen = rootReg;
+    } else {
+      // Choose from scale-only tones (outside chord but inside key scale)
+      const weights = scaleOnlyCand.map(n => intervalWeight((((n|0)%12+12)%12 - rootPc + 12)%12));
+      chosen = pickWeightedDeterministic(scaleOnlyCand, weights, rB);
+      if (chosen == null) chosen = rootReg;
     }
 
-    const pScale = clamp(effectiveDistance / 100, 0, 1);
+    // Hard safety: must never output outside the allowed sets at current distance
+    const chosenPc = ((chosen|0) % 12 + 12) % 12;
+    if (!isAllowedPcForDistance(chosenPc, rootPc, chordPCs, dist)) chosen = rootReg;
 
-    let chosen = chordChoice;
-    if (!forceChord && pScale > 0) {
-      const useScale = (rA >= rootBias) && (rA < (rootBias + (1 - rootBias) * pScale));
-      if (useScale && state.currentScalePCSet) {
-        const scaleCand = buildRegisterCandidatesFromPCSet(state.currentScalePCSet, rootAbs);
-        const scaleChoice = pickFromListDeterministic(scaleCand, rB);
-        if (scaleChoice != null) chosen = scaleChoice;
-      }
-    }
-
-    const chosenPc = ((chosen % 12) + 12) % 12;
-    if (!chordPCs.has(chosenPc)) {
-      if (!(state.hasKey && state.currentScalePCSet && state.currentScalePCSet.has(chosenPc))) {
-        chosen = root;
-      }
-    }
-
-    if (forceChord) state.needChordToneNext = false;
     updateRepeatMemory(chosen);
     return chosen;
   }
@@ -978,38 +1107,27 @@
     }
   }
 
-  function buildRegisterCandidatesFromPCSet(pcSet, rootAbs) {
+  function buildRegisterCandidatesFromPCSet(pcSet, rootAbs, lo, hi) {
     const pcs = Array.from(pcSet || []);
-    if (!pcs.length) return [shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI)];
+    if (!pcs.length) return [];
     const out = [];
 
     const rootPc = ((rootAbs|0) % 12 + 12) % 12;
     for (const pc of pcs) {
       const delta = ((pc - rootPc) + 12) % 12;
-      const base = shiftIntoBassRegister((rootAbs|0) + delta, BASS_LO, BASS_HI);
-      for (let n = base; n >= BASS_LO; n -= 12) if ((((n%12)+12)%12) === pc) out.push(n);
-      for (let n = base + 12; n <= BASS_HI; n += 12) if ((((n%12)+12)%12) === pc) out.push(n);
+      const base = shiftIntoRegister((rootAbs|0) + delta, lo, hi);
+
+      for (let n = base; n >= lo; n -= 12) if ((((n%12)+12)%12) === pc) out.push(n);
+      for (let n = base + 12; n <= hi; n += 12) if ((((n%12)+12)%12) === pc) out.push(n);
     }
 
     const uniq = Array.from(new Set(out)).sort((a,b)=>a-b);
-    return uniq.length ? uniq : [shiftIntoBassRegister(rootAbs, BASS_LO, BASS_HI)];
+    return uniq;
   }
 
-  function pickFromListDeterministic(list, r) {
-    if (!list || !list.length) return null;
-    const idx = Math.min(list.length - 1, Math.max(0, Math.floor(clamp(r,0,0.999999) * list.length)));
-    return list[idx];
-  }
-
-  function shiftIntoBassRegister(note, lo, hi) {
-    let n = note|0;
-    while (n > hi) n -= 12;
-    while (n < lo) n += 12;
-    if (n < 0) n = 0;
-    if (n > 127) n = 127;
-    return n;
-  }
-
+  // =========================================================
+  // Playback / rhythm / legato (unchanged)
+  // =========================================================
   function densityThreshold() {
     return clamp((state.density|0) / 100, 0, 1);
   }
@@ -1072,13 +1190,13 @@
       MIDI.noteOn(note, 96, BASS_MIDI_CH);
       state.activeBassNote = note;
       scheduleLegatoNoteOff(note, p, len);
-      el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} role=${roleChar} note=${note} (new)`;
+      el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} note=${note} (new) key=${state.currentKeyLabel}`;
       return;
     }
 
     if (prev === note) {
       scheduleLegatoNoteOff(note, p, len);
-      el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} role=${roleChar} note=${note} (held)`;
+      el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} note=${note} (held) key=${state.currentKeyLabel}`;
       return;
     }
 
@@ -1091,7 +1209,7 @@
 
     scheduleLegatoNoteOff(note, p, len);
 
-    el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} role=${roleChar} note=${note} (chg from ${prev})`;
+    el.noteDebug.textContent = `tick=${globalTick} p=${p}/${len} note=${note} (chg from ${prev}) key=${state.currentKeyLabel}`;
   }
 
   function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
@@ -1112,9 +1230,11 @@
   }
 
   function setChordSource(mode) {
-    state.chordSource = mode;
-    el.srcModeOut.textContent = (mode === 'bc') ? 'BroadcastChannel' : 'MIDI In';
-    if (mode === 'midi') commitChordUpdate();
+    // Mode switching removed: chord is always read from MIDI input (Ch 1 chord tones, Ch 2 root).
+    // Key is always read from BroadcastChannel 'music-key'.
+    state.chordSource = 'midi';
+    el.srcModeOut.textContent = 'MIDI Chords + Key BC';
+    commitChordUpdate();
   }
 
   function panic(reason='panic') {
@@ -1149,9 +1269,10 @@
       el.densityOut.textContent = String(state.density|0);
     });
 
-    el.toggleSrcBtn.addEventListener('click', () => {
-      setChordSource(state.chordSource === 'midi' ? 'bc' : 'midi');
-    });
+    // Chord source toggling disabled: chord is always from MIDI (Ch 1+2), key is from BroadcastChannel 'music-key'.
+    if (el.toggleSrcBtn) {
+      el.toggleSrcBtn.disabled = true;
+    }
   }
 
   function startSilenceGuard() {
@@ -1185,20 +1306,23 @@
     bindUI();
     initTicker();
     initChordBC();
-    startSilenceGuard();
     initKeyBC();
+    startSilenceGuard();
     MIDI.init();
 
     el.patLenOut.textContent = '—';
     el.densityOut.textContent = String(state.density|0);
+
     if (el.legatoSlider) el.legatoSlider.value = String(state.legato|0);
     if (el.distanceSlider) el.distanceSlider.value = String(state.distance|0);
     if (el.densitySlider) el.densitySlider.value = String(state.density|0);
     if (el.legatoVal) el.legatoVal.textContent = String(state.legato|0);
     if (el.distanceVal) el.distanceVal.textContent = String(state.distance|0);
     if (el.densityVal) el.densityVal.textContent = String(state.density|0);
+
     renderTickUI(0);
     renderChordUI();
+    renderKeyUI();
 
     setChordSource('midi');
   }

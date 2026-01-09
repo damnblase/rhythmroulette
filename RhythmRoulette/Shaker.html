@@ -225,17 +225,17 @@ h1,h2,h3,h4,h5,h6,p{
 
   <div class="box minui-flatcard">
 
-    <!-- MIDI OUTPUT -->
+    <!-- MIDI Out -->
     <div class="row minui-row minui-keep-output">
       <button id="midiEnableBtn">Enable MIDI</button>
-      <label for="outputSel">MIDI Output</label>
+      <label for="outputSel">MIDI Out</label>
       <select id="outputSel" disabled></select>
       <span id="midiStatus" class="minui-hidden"></span>
     </div>
 
     <!-- Duplicate kept but hidden -->
     <div class="row minui-row minui-scope">
-      <label for="outputSel">MIDI Output</label>
+      <label for="outputSel">MIDI Out</label>
       <select id="outputSel" disabled></select>
     </div>
 
@@ -314,7 +314,7 @@ h1,h2,h3,h4,h5,h6,p{
     outs.forEach(o=>{
       const opt = document.createElement('option');
       opt.value = o.id;
-      opt.textContent = o.name || 'MIDI Output';
+      opt.textContent = o.name || 'MIDI Out';
       outputSel.appendChild(opt);
     });
     if(outs.length){
