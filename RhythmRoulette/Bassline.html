@@ -227,8 +227,14 @@
     // last note memory for smooth register choice
     lastBassNote: null,
 
-    // active notes (polyphony safe)
-    activeNotes: new Map(), // note -> timeoutId
+    // strict mono note lifecycle
+    activeNote: null,          // currently sounding MIDI note number (or null)
+    activeOffTimer: null,      // timeout id for scheduled note-off (or null)
+
+    // per-tick dedupe / arbitration
+    tickRequests: new Map(),   // Map<int, {priority:number, fn:Function}>
+    emittedTick: -1,           // last tick where a note was emitted
+    emittedPriority: 0,        // priority of the note emitted on emittedTick
   };
 
   function makeEmptyPattern(len){
@@ -421,7 +427,9 @@
     state.lastChordAttackMs = now;
 
     const globalTick = (state.lastTickCount >= 0) ? state.lastTickCount : 0;
-    triggerBassEvent(globalTick, null, 'chordChange');
+    requestBassNote(globalTick, 3, () => triggerBassEventNow(globalTick, null, 'chordChange'));
+    // Emit immediately (and override anything already emitted on this tick).
+    flushBassRequestForTick(globalTick, true);
     el.debugOut.textContent = `attack @${globalTick}`;
   }
 
@@ -613,15 +621,18 @@
 
     renderTickUI(t);
 
-    // 1) Run scheduled octave jumps for this tick
+    // 1) Run scheduled octave jumps for this tick (enqueue, do not emit directly)
     runScheduledForTick(t);
 
-    // 2) Pattern playback
+    // 2) Pattern playback (enqueue)
     const p = (state.pattern.len > 0) ? (t % state.pattern.len) : 0;
     const step = state.pattern.steps[p];
     if (step && step.on) {
-      triggerBassEvent(t, p, 'pattern');
+      requestBassNote(t, 2, () => triggerBassEventNow(t, p, 'pattern'));
     }
+
+    // 3) Emit at most one note for this tick (strict mono + hard de-dupe)
+    flushBassRequestForTick(t, false);
   }
 
   function renderTickUI(t) {
@@ -885,7 +896,7 @@
 
     for (const ev of arr) {
       if (ev.type === 'octJump') {
-        triggerSpecificNote(globalTick, ev.note|0, 'octJump');
+        requestBassNote(globalTick, 1, () => triggerSpecificNoteNow(globalTick, ev.note|0, 'octJump'));
       }
     }
   }
@@ -893,41 +904,99 @@
   // =========================================================
   // Note triggering + MIDI note lifecycle
   // =========================================================
-  function noteOnWithAutoOff(note, vel, durMs) {
-    if (!MIDI.out) return;
 
-    // If this note is already active, retrigger by turning it off first (safe, avoids stuck)
-    if (state.activeNotes.has(note)) {
-      try { clearTimeout(state.activeNotes.get(note)); } catch {}
-      MIDI.noteOff(note, BASS_MIDI_CH);
-      state.activeNotes.delete(note);
+  // Safety epsilon so Note Off always lands slightly before the next Note On
+  const NOTE_OFF_EPS_MS = 4;
+
+  function requestBassNote(globalTick, priority, fn) {
+    // Hard de-dupe: keep highest priority request for this tick.
+    const t = (globalTick|0) % LOOP_TICKS;
+    const cur = state.tickRequests.get(t);
+    if (!cur || priority > cur.priority) {
+      state.tickRequests.set(t, { priority, fn });
     }
-
-    MIDI.noteOn(note, vel, BASS_MIDI_CH);
-
-    const tid = setTimeout(() => {
-      MIDI.noteOff(note, BASS_MIDI_CH);
-      state.activeNotes.delete(note);
-    }, durMs);
-
-    state.activeNotes.set(note, tid);
   }
 
-  function triggerSpecificNote(globalTick, note, source) {
+  function flushBassRequestForTick(globalTick, force) {
+    const t = (globalTick|0) % LOOP_TICKS;
+    const req = state.tickRequests.get(t);
+    if (!req) return;
+
+    // If not forcing, don't emit twice for the same tick.
+    if (!force && state.emittedTick === t) return;
+
+    state.tickRequests.delete(t);
+
+    // Emit exactly one note
+    state.emittedTick = t;
+    state.emittedPriority = req.priority;
+
+    req.fn();
+  }
+
+  function clearActiveOffTimer() {
+    if (state.activeOffTimer != null) {
+      try { clearTimeout(state.activeOffTimer); } catch {}
+      state.activeOffTimer = null;
+    }
+  }
+
+  function stopCurrentBassNote() {
     if (!MIDI.out) return;
+
+    clearActiveOffTimer();
+
+    if (state.activeNote != null) {
+      const n = state.activeNote|0;
+      // Ensure the previous note is definitely stopped before starting the next one.
+      MIDI.noteOff(n, BASS_MIDI_CH);
+      // Extra safety: force silent state on that channel (prevents stuck overlaps in some synths)
+      MIDI.allNotesOffChannel(BASS_MIDI_CH);
+      state.activeNote = null;
+    } else {
+      // Still safe to send a channel flush if something external got stuck
+      MIDI.allNotesOffChannel(BASS_MIDI_CH);
+    }
+  }
+
+  function noteOnMono(note, vel, durMs) {
+    if (!MIDI.out) return;
+
+    // STRICT MONO: always stop previous note fully before any new Note On.
+    stopCurrentBassNote();
+
+    // Start new note
+    MIDI.noteOn(note, vel, BASS_MIDI_CH);
+    state.activeNote = note|0;
+
+    // Schedule Note Off with epsilon to avoid micro-overlaps
+    const offMs = Math.max(0, (durMs|0) - NOTE_OFF_EPS_MS);
+    state.activeOffTimer = setTimeout(() => {
+      // Only turn off if this is still the active note
+      if (state.activeNote === (note|0)) {
+        MIDI.noteOff(note, BASS_MIDI_CH);
+        state.activeNote = null;
+      }
+      state.activeOffTimer = null;
+    }, offMs);
+  }
+
+  function triggerSpecificNoteNow(globalTick, note, source) {
+    if (!MIDI.out) return;
+
     const durTicks = computeDurationTicks(source, globalTick);
     const durMs = durationMsFromTicks(durTicks);
 
     // Octave jump should be short and light
     const vel = (source === 'octJump') ? 70 : 96;
 
-    noteOnWithAutoOff(note, vel, durMs);
-    state.lastBassNote = note;
+    noteOnMono(note|0, vel, durMs);
+    state.lastBassNote = note|0;
 
     el.debugOut.textContent = `${source} note=${note} dur=${durTicks}t`;
   }
 
-  function triggerBassEvent(globalTick, patternPos, source) {
+  function triggerBassEventNow(globalTick, patternPos, source) {
     const chord = state.currentChordNotes || [];
     if (!chord.length) return;
 
@@ -952,8 +1021,8 @@
 
     const note = bestMidiNoteForPc(chosenPc, ref);
 
-    // Fire the main note
-    triggerSpecificNote(globalTick, note, source);
+    // Fire the main note (strict mono)
+    triggerSpecificNoteNow(globalTick, note, source);
 
     // Schedule octave jump repeat (only for main notes, not for octJump events)
     if (source !== 'octJump') scheduleOctaveJump(globalTick, note);
@@ -982,12 +1051,8 @@
   // Panic / safety
   // =========================================================
   function panic(reason='panic') {
-    // clear note-offs
-    for (const [note, tid] of state.activeNotes.entries()) {
-      try { clearTimeout(tid); } catch {}
-      try { MIDI.noteOff(note, BASS_MIDI_CH); } catch {}
-    }
-    state.activeNotes.clear();
+    // clear current mono note
+    try { stopCurrentBassNote(); } catch {}
     try { MIDI.allNotesOffChannel(BASS_MIDI_CH); } catch {}
     try { MIDI.allNotesOff(); } catch {}
     state.scheduled.clear();

@@ -47,9 +47,32 @@
       gap: var(--ui-gap);
     }
 
+    /* ===== HEADER ROW ===== */
+    .minui-header{
+      display:flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
     .minui-title{
       font-weight: 600;
       font-size: 14px;
+    }
+
+    .dark-toggle{
+      font-family: var(--ui-font);
+      font-size: 14px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      color: var(--ui-fg);
+    }
+
+    .dark-toggle:focus{
+      outline: none;
     }
 
     .minui-row{
@@ -58,23 +81,23 @@
       gap: var(--ui-gap);
     }
 
+    /* ===== FRAME (BORDERS REMOVED) ===== */
     .minui-frame{
       flex: 1 1 420px;
       min-width: 320px;
-      border: 1px solid var(--ui-border);
-      border-radius: var(--ui-radius);
+      border: none;               /* removed */
+      border-radius: 0;           /* removed */
       background: var(--ui-bg);
       overflow: hidden;
     }
 
     .minui-frame-header{
       padding: 8px 12px;
-      border-bottom: 1px solid var(--ui-border);
+      border-bottom: none;        /* removed */
       font-weight: 500;
       font-size: 14px;
     }
 
-    /* ===== IFRAME BASE STYLE ===== */
     .minui-frame iframe{
       width: 100%;
       height: 300px;
@@ -93,7 +116,6 @@
       filter: invert(1) hue-rotate(180deg);
     }
 
-    /* prevent double-inversion if images/videos appear later */
     html.dark-mode img,
     html.dark-mode video{
       filter: invert(1) hue-rotate(180deg);
@@ -104,14 +126,10 @@
 <body>
   <div class="minui-wrap">
 
-    <div class="minui-title">RR</div>
-
-    <!-- Dark mode toggle -->
-    <button
-      id="darkModeToggle"
-      style="align-self:flex-start; padding:6px 10px; font-size:12px;">
-      Dark mode
-    </button>
+    <div class="minui-header">
+      <div class="minui-title">RR</div>
+      <button id="darkModeToggle" class="dark-toggle">dark</button>
+    </div>
 
     <div class="minui-row">
 
@@ -121,23 +139,23 @@
       </div>
 
       <div class="minui-frame">
-        <div class="minui-frame-header">Harmony</div>
-        <iframe src="Harmony.html"></iframe>
-      </div>
-
-      <div class="minui-frame">
-        <div class="minui-frame-header">Shaker</div>
-        <iframe src="Shaker.html"></iframe>
-      </div>
-
-      <div class="minui-frame">
         <div class="minui-frame-header">Rhythm</div>
         <iframe src="Rhythm.html"></iframe>
       </div>
 
       <div class="minui-frame">
+        <div class="minui-frame-header">Harmony</div>
+        <iframe src="Harmony.html"></iframe>
+      </div>
+
+      <div class="minui-frame">
         <div class="minui-frame-header">Bassline</div>
         <iframe src="Bassline.html"></iframe>
+      </div>
+
+      <div class="minui-frame">
+        <div class="minui-frame-header">Shaker</div>
+        <iframe src="Shaker.html"></iframe>
       </div>
 
       <div class="minui-frame">
@@ -157,7 +175,8 @@
   if (!btn) return;
 
   btn.addEventListener('click', () => {
-    document.documentElement.classList.toggle('dark-mode');
+    const isDark = document.documentElement.classList.toggle('dark-mode');
+    btn.textContent = isDark ? 'light' : 'dark';
   });
 })();
 </script>
@@ -256,69 +275,8 @@
     }
   }
 
-  window.addEventListener('message', (event) => {
-    const data = event.data;
-    if (!data || data.__iframeAutoHeight !== true) return;
-
-    const reported = Math.ceil(Number(data.height || 0));
-    if (!Number.isFinite(reported) || reported <= 0) return;
-
-    const frame = iframes().find(f => f.contentWindow === event.source);
-    if (!frame) return;
-
-    const enforced = Math.min(Math.max(50, reported + EXTRA_BOTTOM_PX), MAX_IFRAME_HEIGHT);
-    naturalHeights.set(frame, enforced);
-    schedule();
-  });
-
-  function attachSameOriginObservers(iframe) {
-    try {
-      const doc = iframe.contentDocument;
-      if (!doc) return;
-
-      const ro = new ResizeObserver(() => {
-        const h = measureSameOrigin(iframe);
-        if (h !== null) naturalHeights.set(iframe, h);
-        schedule();
-      });
-      ro.observe(doc.documentElement);
-
-      const mo = new MutationObserver(() => schedule());
-      mo.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
-
-      doc.fonts?.ready?.then(schedule).catch(()=>{});
-      iframe.contentWindow?.addEventListener('resize', schedule, { passive: true });
-    } catch {}
-  }
-
-  function onIframeLoad(e) {
-    const iframe = e.currentTarget;
-    const h = measureSameOrigin(iframe);
-    if (h !== null) {
-      naturalHeights.set(iframe, h);
-      attachSameOriginObservers(iframe);
-      schedule();
-    } else {
-      try {
-        iframe.contentWindow?.postMessage({ __iframeAutoHeightRequest: true }, '*');
-      } catch {}
-      schedule();
-    }
-  }
-
-  function init() {
-    for (const iframe of iframes()) {
-      iframe.addEventListener('load', onIframeLoad);
-    }
-    schedule();
-    window.addEventListener('resize', schedule, { passive: true });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
-  }
+  window.addEventListener('resize', schedule, { passive: true });
+  schedule();
 })();
 </script>
 
