@@ -77,12 +77,26 @@
     /* ===== IFRAME BASE STYLE ===== */
     .minui-frame iframe{
       width: 100%;
-      height: 300px;         /* hauteur de base */
-      max-height: 400px;     /* hauteur maximale */
+      height: 300px;
+      max-height: 400px;
       border: 0;
       display: block;
       background: var(--ui-bg);
-      overflow-y: auto;      /* barre de défilement verticale si nécessaire */
+      overflow-y: auto;
+    }
+
+    /* =========================================================
+      DARK MODE (GLOBAL DISPLAY INVERSION)
+    ========================================================= */
+
+    html.dark-mode{
+      filter: invert(1) hue-rotate(180deg);
+    }
+
+    /* prevent double-inversion if images/videos appear later */
+    html.dark-mode img,
+    html.dark-mode video{
+      filter: invert(1) hue-rotate(180deg);
     }
   </style>
 </head>
@@ -91,6 +105,13 @@
   <div class="minui-wrap">
 
     <div class="minui-title">RR</div>
+
+    <!-- Dark mode toggle -->
+    <button
+      id="darkModeToggle"
+      style="align-self:flex-start; padding:6px 10px; font-size:12px;">
+      Dark mode
+    </button>
 
     <div class="minui-row">
 
@@ -128,9 +149,26 @@
   </div>
 
 <script>
+/* =========================================================
+   DARK MODE TOGGLE
+========================================================= */
+(() => {
+  const btn = document.getElementById('darkModeToggle');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    document.documentElement.classList.toggle('dark-mode');
+  });
+})();
+</script>
+
+<script>
+/* =========================================================
+   IFRAME AUTO-HEIGHT + ROW EQUALIZATION (UNCHANGED)
+========================================================= */
 (() => {
   const EXTRA_BOTTOM_PX = 5;
-  const MAX_IFRAME_HEIGHT = 370; // correspond à CSS max-height
+  const MAX_IFRAME_HEIGHT = 370;
 
   const iframes = () => Array.from(document.querySelectorAll('iframe'));
   const naturalHeights = new WeakMap();
@@ -162,7 +200,7 @@
       );
 
       return Math.ceil(h + EXTRA_BOTTOM_PX);
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -213,9 +251,7 @@
       }
       if (!maxH) continue;
       for (const iframe of row.items) {
-        // ✅ limiter à MAX_IFRAME_HEIGHT
-        const limitedHeight = Math.min(maxH, MAX_IFRAME_HEIGHT);
-        iframe.style.height = `${limitedHeight}px`;
+        iframe.style.height = `${Math.min(maxH, MAX_IFRAME_HEIGHT)}px`;
       }
     }
   }
@@ -223,6 +259,7 @@
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data || data.__iframeAutoHeight !== true) return;
+
     const reported = Math.ceil(Number(data.height || 0));
     if (!Number.isFinite(reported) || reported <= 0) return;
 
@@ -249,9 +286,9 @@
       const mo = new MutationObserver(() => schedule());
       mo.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
 
-      doc.fonts && doc.fonts.ready && doc.fonts.ready.then(schedule).catch(()=>{});
-      iframe.contentWindow && iframe.contentWindow.addEventListener('resize', schedule, { passive: true });
-    } catch (e) {}
+      doc.fonts?.ready?.then(schedule).catch(()=>{});
+      iframe.contentWindow?.addEventListener('resize', schedule, { passive: true });
+    } catch {}
   }
 
   function onIframeLoad(e) {
@@ -263,8 +300,8 @@
       schedule();
     } else {
       try {
-        iframe.contentWindow && iframe.contentWindow.postMessage({ __iframeAutoHeightRequest: true }, '*');
-      } catch (e) {}
+        iframe.contentWindow?.postMessage({ __iframeAutoHeightRequest: true }, '*');
+      } catch {}
       schedule();
     }
   }
