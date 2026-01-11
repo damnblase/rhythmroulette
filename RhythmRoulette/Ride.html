@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Shaker</title>
+<title>Ride</title>
 
 <style>
 /* MINIMAL WHITE UI */
@@ -242,6 +242,10 @@ h1,h2,h3,h4,h5,h6,p{
     <!-- REGENERATE -->
     <div class="row minui-row minui-keep-regen">
       <button id="regenBtn">Randomize Pattern</button>
+
+      <label for="timingMode">Timing</label>
+      <label><input id="timingMode" type="checkbox" /> 1 and 3</label>
+
       <button id="panicBtn" class="minui-hidden">Panic</button>
     </div>
 
@@ -274,13 +278,27 @@ h1,h2,h3,h4,h5,h6,p{
 (() => {
   const TICKER_CHANNEL_NAME = 'internal-ticker';
   const MIDI_NOTE = 60;
-  const MIDI_CHANNEL_1_BASED = 6;
+
+  // Shaker outputs on channel 6 in the original file; Ride must be on the next channel.
+  const SHAKER_MIDI_CHANNEL_1_BASED = 6;
+  const MIDI_CHANNEL_1_BASED = SHAKER_MIDI_CHANNEL_1_BASED + 1;
+
   const MIDI_CH = MIDI_CHANNEL_1_BASED - 1;
   const GATE_MS = 45;
 
-  let globalSubTick = 0;
   let loopLength = 4;
   let pattern = [];
+
+  let rideStepCount = 0;
+
+  // MUST use incoming tick counter for gating
+  let lastTickNumber = null;
+
+  // We don't know if ticker is 0-based or 1-based.
+  // This is the residue (mod 4) that corresponds to "beat 1" (first tick of each 4-tick cycle).
+  // - If 0-based: beat1Residue = 0  (0,1,2,3)
+  // - If 1-based: beat1Residue = 1  (1,2,3,0)
+  let beat1Residue = null;
 
   const $ = (s) => document.querySelector(s);
   const midiEnableBtn = $('#midiEnableBtn');
@@ -292,6 +310,7 @@ h1,h2,h3,h4,h5,h6,p{
   const densityVal    = $('#densityVal');
   const velFloor      = $('#velFloor');
   const velFloorVal   = $('#velFloorVal');
+  const timingMode    = $('#timingMode');
 
   let midiAccess = null;
   let midiOut = null;
@@ -345,6 +364,13 @@ h1,h2,h3,h4,h5,h6,p{
   function regeneratePattern(){
     const lengths=[4,8,16];
     loopLength=lengths[Math.floor(Math.random()*lengths.length)];
+
+    // Randomize timing mode as part of regeneration.
+    if(timingMode){
+      timingMode.checked = (Math.random() < 0.5); // unchecked => "1 only", checked => "1 and 3"
+      timingMode.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     const p = density.value/100;
     const vMin = +velFloor.value;
     pattern=[];
@@ -354,15 +380,74 @@ h1,h2,h3,h4,h5,h6,p{
         vel: Math.floor(Math.random()*(127-vMin+1))+vMin
       });
     }
+
+    // Reset deterministic counters.
+    rideStepCount = 0;
+    lastTickNumber = null;
+    beat1Residue = null;
   }
 
   const chan = new BroadcastChannel(TICKER_CHANNEL_NAME);
+
+  function isAllowedTickInCycle(cycleIndex){
+    // cycleIndex: 0..3 where 0=beat1, 1=beat2, 2=beat3, 3=beat4
+    // Never on 2 or 4 (cycleIndex 1 or 3)
+    if(cycleIndex === 0) return true; // beat 1 always allowed
+    if(cycleIndex === 2) return !!(timingMode && timingMode.checked); // beat 3 allowed only in "1 and 3"
+    return false;
+  }
+
   chan.onmessage = (ev)=>{
-    const m=ev.data||{};
-    let sub = m.sub ?? m.subIndex;
-    if(sub==null) return;
-    globalSubTick++;
-    const step = globalSubTick % loopLength;
+    const m = ev.data || {};
+
+    // MUST use tick number provided by ticker message (no local counting).
+    let tickNumber =
+      m.tickNumber ?? m.tick ?? m.tickNum ?? m.tick_index ?? m.tickIndex ?? m.t ?? m.count ?? m.i ?? m.n;
+
+    if(tickNumber == null) return;
+
+    tickNumber = Number(tickNumber);
+    if(!Number.isFinite(tickNumber)) return;
+
+    // De-dupe in case the same tick is broadcast more than once.
+    if(lastTickNumber === tickNumber) return;
+
+    // Detect reset (or any backwards jump) and re-learn base on the new stream.
+    if(lastTickNumber != null && tickNumber < lastTickNumber){
+      beat1Residue = null;
+      rideStepCount = 0; // keep deterministic after reset
+    }
+    lastTickNumber = tickNumber;
+
+    // Learn whether beat 1 corresponds to residue 0 (0-based) or 1 (1-based).
+    // If we can infer from a stream start that begins at 0 or 1, lock it.
+    if(beat1Residue == null){
+      if(tickNumber === 0){
+        beat1Residue = 0;
+      }else if(tickNumber === 1){
+        beat1Residue = 1;
+      }else{
+        // Fallback: pick a stable mapping using the first observed residue.
+        // This does not assume we're at beat 1 right now; it just chooses one of the two valid conventions.
+        // Prefer 0-based if the residue is 0, otherwise default to 1-based.
+        beat1Residue = ((tickNumber % 4) === 0) ? 0 : 1;
+      }
+    }
+
+    // Derive repeating 4-step cycle index where:
+    // cycleIndex 0 = beat 1 (first tick of each 4-tick cycle)
+    // cycleIndex 1 = beat 2
+    // cycleIndex 2 = beat 3
+    // cycleIndex 3 = beat 4
+    const residue = ((tickNumber % 4) + 4) % 4;
+    const cycleIndex = ((residue - beat1Residue) + 4) % 4;
+
+    // Gate: ignore completely when not eligible (no eval, no step advance).
+    if(!isAllowedTickInCycle(cycleIndex)) return;
+
+    const step = rideStepCount % loopLength;
+    rideStepCount++;
+
     const s = pattern[step];
     if(s?.on){
       sendNoteOn(MIDI_NOTE, s.vel);

@@ -999,6 +999,32 @@ button{ transition: none !important; }
     requestAnimationFrame(syncAllCategoryButtonWidths);
     updateBpmDisplaySent("—");
 
+    /**********************************************************************
+     * BroadcastChannel: external randomize trigger (toggles + sliders)
+     **********************************************************************/
+    const randomizeChannel = new BroadcastChannel('randomize_channel');
+    randomizeChannel.onmessage = (event) => {
+      if (event && event.data && event.data.type === 'randomize_all') {
+        console.log("Message 'randomize_all' reçu !");
+
+        // A) Randomize the five toggles (use existing click behavior)
+        const toggleButtons = Array.from(els.toggles.querySelectorAll("button.toggle"));
+        for (const btn of toggleButtons) {
+          const targetOn = Math.random() < 0.5;
+          const isOn = btn.dataset.on === "1";
+          if (targetOn !== isOn) btn.click();
+        }
+
+        // B) Randomize the five sliders (use existing input behavior)
+        const sliderInputs = Array.from(els.sliders.querySelectorAll('input[type="range"]'));
+        for (const slider of sliderInputs) {
+          const v = Math.floor(Math.random() * 128);
+          slider.value = String(v);
+          slider.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+    };
+
     (async function initMIDI() {
       if (!navigator.requestMIDIAccess) {
         setStatus("Web MIDI not supported in this browser (use Chrome/Edge).", true);
