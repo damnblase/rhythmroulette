@@ -94,7 +94,14 @@
     </div>
 
     <div class="row">
+
       <button id="randBtn">Randomize Pattern</button>
+      <label for="patternLen">Pattern Length</label>
+      <select id="patternLen" aria-label="Pattern Length">
+        <option value="8">8</option>
+        <option value="16">16</option>
+        <option value="32">32</option>
+      </select>
       <span class="pill">Len <span id="lenOut" class="mono">—</span></span>
       <span class="pill">Hits <span id="hitsOut" class="mono">—</span></span>
       <span class="pill">Tick <span id="tickOut" class="mono">—</span>/127</span>
@@ -167,6 +174,8 @@
     panicBtn: $('#panicBtn'),
     randBtn: $('#randBtn'),
 
+    patternLen: $('#patternLen'),
+
     lenOut: $('#lenOut'),
     hitsOut: $('#hitsOut'),
     tickOut: $('#tickOut'),
@@ -219,7 +228,7 @@
     lastChordChangeTick: null,
 
     // pattern
-    pattern: makeEmptyPattern(32),
+    pattern: makeEmptyPattern(16),
 
     // scheduled events keyed by global tick 0..127
     scheduled: new Map(), // Map<int, Array<{type:'octJump', note:number}>>
@@ -682,8 +691,13 @@
     return weights.length - 1;
   }
 
-  function randomizePattern() {
-    const len = choice([16, 32, 64]);
+  function randomizePattern(forceLen=null) {
+    const lengths = [8, 16, 32];
+    const len = (forceLen != null && lengths.includes(forceLen|0)) ? (forceLen|0) : choice(lengths);
+
+    // Keep the dropdown in sync with the active pattern length
+    if (el.patternLen) el.patternLen.value = String(len);
+
     const minHits = Math.ceil(MIN_HIT_RATIO * len);
     const maxHits = Math.floor(MAX_HIT_RATIO * len);
     const hitCount = randint(minHits, Math.max(minHits, maxHits));
@@ -1048,6 +1062,31 @@
   }
 
   // =========================================================
+  // BroadcastChannel-triggered randomization (randomize_channel)
+  // =========================================================
+  function initRandomizeBC() {
+    const randomizeChannel = new BroadcastChannel('randomize_channel');
+    randomizeChannel.onmessage = (event) => {
+      const d = event ? event.data : null;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === 'randomize_all') {
+        console.log("Message 'randomize_all' reçu !");
+        // 1) Trigger existing Randomize Pattern behavior via real button click
+        if (el.randBtn) el.randBtn.click();
+
+        // 2) Randomize sliders exactly like user input (value + input event)
+        const sliders = [el.pitchVar, el.octJump, el.legato];
+        for (const s of sliders) {
+          if (!s) continue;
+          const v = randint(0, 100);
+          s.value = String(v);
+          s.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    };
+  }
+
+  // =========================================================
   // Panic / safety
   // =========================================================
   function panic(reason='panic') {
@@ -1079,6 +1118,12 @@
   el.panicBtn.addEventListener('click', () => panic('button'));
   el.randBtn.addEventListener('click', () => randomizePattern());
 
+  el.patternLen.addEventListener('change', () => {
+    const len = parseInt(el.patternLen.value, 10);
+    if (!Number.isFinite(len)) return;
+    randomizePattern(len);
+  });
+
   el.pitchVar.addEventListener('input', () => syncSliders());
   el.octJump.addEventListener('input', () => syncSliders());
   el.legato.addEventListener('input', () => syncSliders());
@@ -1090,10 +1135,12 @@
     syncSliders();
     initKeyBC();
     initTicker();
+    initRandomizeBC();
     MIDI.init();
 
     // start with a pattern immediately
-    randomizePattern();
+    if (el.patternLen) el.patternLen.value = '16';
+    randomizePattern(16);
     renderKeyUI();
     renderChordUI();
   }

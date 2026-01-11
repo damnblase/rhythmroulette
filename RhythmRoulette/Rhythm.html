@@ -702,6 +702,19 @@
       return false;
     }
 
+    /***** BROADCASTCHANNEL RANDOMIZE TRIGGER *****/
+    const randomizeChannel = new BroadcastChannel('randomize_channel');
+
+    randomizeChannel.onmessage = (event) => {
+      if (event && event.data && event.data.type === 'randomize_all') {
+        console.log("Message 'randomize_all' reçu !");
+        const randPatternBtn = document.getElementById('randomizeAll');
+        const randPresetBtn = document.getElementById('randomizeAllParams');
+        if (randPatternBtn) randPatternBtn.click();
+        if (randPresetBtn) randPresetBtn.click();
+      }
+    };
+
     /***** EXTERNAL TICKER SUBSCRIBER *****/
     const ticker = new BroadcastChannel('internal-ticker');
     ticker.onmessage = (e) => {

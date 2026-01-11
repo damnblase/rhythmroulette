@@ -226,6 +226,9 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
     <div class="row minui-row">
       <label for="bpm">BPM</label>
       <input id="bpm" type="number" min="40" max="300" step="1" value="120" />
+      <button id="bpmMinus10" type="button">−10</button>
+      <button id="bpmPlus10" type="button">+10</button>
+      <button id="bpmRand" type="button">Random BPM</button>
       <span class="note" id="tickMsNote"></span>
     </div>
 
@@ -265,6 +268,9 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
   // ===== DOM =====
   const $ = (sel) => document.querySelector(sel);
   const bpmInput = $('#bpm');
+  const bpmMinus10Btn = $('#bpmMinus10');
+  const bpmPlus10Btn = $('#bpmPlus10');
+  const bpmRandBtn = $('#bpmRand');
   const swingInput = $('#swing');
   const swingVal = $('#swingVal');
   const tickMsNote = $('#tickMsNote');
@@ -309,6 +315,18 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
     const v = Math.max(40, Math.min(300, parseFloat(bpmInput.value || '120')));
     return v;
   }
+  function clampBpm(v) {
+    const min = (bpmInput && bpmInput.min !== '' && bpmInput.min != null) ? parseFloat(bpmInput.min) : 40;
+    const max = (bpmInput && bpmInput.max !== '' && bpmInput.max != null) ? parseFloat(bpmInput.max) : 300;
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function setBpmThroughInput(v) {
+    const clamped = clampBpm(v);
+    bpmInput.value = String(Math.round(clamped));
+    bpmInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   function sixteenthMsAtBPM(bpm) { return (60000 / bpm) / 4; }
   function sixteenthSecAtBPM(bpm) { return sixteenthMsAtBPM(bpm) / 1000; }
   function swingMs(bpm, pct) {
@@ -458,6 +476,16 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
   }
 
   // ===== Events =====
+  function syncBpmButtons() {
+    const isInternal = currentMode === 'internal-ticker';
+    const buttons = [bpmMinus10Btn, bpmPlus10Btn, bpmRandBtn];
+    buttons.forEach((btn) => {
+      if (!btn) return;
+      btn.disabled = !isInternal;
+      btn.style.display = isInternal ? '' : 'none';
+    });
+  }
+
   playBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
 
@@ -475,12 +503,27 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
   bpmInput.addEventListener('input', updateDerivedUI);
   swingInput.addEventListener('input', updateDerivedUI);
 
+  if (bpmMinus10Btn) bpmMinus10Btn.addEventListener('click', () => {
+    if (currentMode !== 'internal-ticker') return;
+    setBpmThroughInput(getBPM() - 10);
+  });
+  if (bpmPlus10Btn) bpmPlus10Btn.addEventListener('click', () => {
+    if (currentMode !== 'internal-ticker') return;
+    setBpmThroughInput(getBPM() + 10);
+  });
+  if (bpmRandBtn) bpmRandBtn.addEventListener('click', () => {
+    if (currentMode !== 'internal-ticker') return;
+    const v = 85 + Math.floor(Math.random() * (175 - 85 + 1));
+    setBpmThroughInput(v);
+  });
+
   modeSelect.addEventListener('change', (e) => {
     currentMode = e.target.value;
     channelOut.textContent = currentMode;
     if (currentMode === 'external-ticker' && !socketOpen) {
       alert("WebSocket not connected. Check server.");
     }
+    syncBpmButtons();
   });
 
   // ===== Broadcast Channel =====
@@ -530,6 +573,10 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
 
     // Écouteur pour le bouton Randomize All
     document.getElementById("randomizeAll").addEventListener("click", function() {
+      if (currentMode === 'internal-ticker') {
+        const v = 85 + Math.floor(Math.random() * (175 - 85 + 1));
+        setBpmThroughInput(v);
+      }
       // Envoyer un message via le BroadcastChannel
       randomizeChannel.postMessage({
         type: 'randomize_all'
@@ -592,6 +639,7 @@ button{ border: 1px solid var(--ui-border) !important; background: var(--ui-bg) 
 
   // Init UI
   updateDerivedUI();
+  syncBpmButtons();
   minuiSyncToggleLabel();
 })();
 </script>

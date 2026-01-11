@@ -257,7 +257,9 @@ const KEYS = (() => {
   
   // intervalles pour les modes
   const naturalMinor = [0,2,3,5,7,8,10]; // tonique, 2, b3, 4, 5, b6, b7
-  const naturalMajor = [0,2,4,5,7,9,11]; // tonique, 2, 3, 4, 5, 6, 7
+
+  // --- MAJOR MODE DISABLED (commented for easy restore) ---
+  // const naturalMajor = [0,2,4,5,7,9,11]; // tonique, 2, 3, 4, 5, 6, 7
 
   const records = [];
   for (const n of names) {
@@ -269,14 +271,15 @@ const KEYS = (() => {
       mode:'minor', 
       scale:naturalMinor 
     });
-    // major key
-    records.push({ 
-      name:`${n} Major`, 
-      tonicName:n, 
-      tonic:semis[n], 
-      mode:'major', 
-      scale:naturalMajor 
-    });
+    // --- MAJOR KEYS DISABLED (commented for easy restore) ---
+    // // major key
+    // records.push({ 
+    //   name:`${n} Major`, 
+    //   tonicName:n, 
+    //   tonic:semis[n], 
+    //   mode:'major', 
+    //   scale:naturalMajor 
+    // });
   }
   return records;
 })();
@@ -550,11 +553,24 @@ keyWS.onmessage = (ev) => {
     if (msg.type === 'key') {
       let k = null;
 
-      // on cherche par tonique (PC ou nom)
-      if (typeof msg.tonicPc === 'number') {
-        k = KEYS.find(x => x.tonic === msg.tonicPc && x.mode === (msg.mode || x.mode));
-      } else if (typeof msg.tonic === 'string') {
-        k = KEYS.find(x => x.tonicName === msg.tonic && x.mode === (msg.mode || x.mode));
+      // Minor-only enforcement:
+      // - If an external MAJOR key is received, convert it to its relative minor (e.g., C Major -> A Minor).
+      // - If the key cannot be resolved to a minor key, ignore it.
+      const incomingMode = (typeof msg.mode === 'string') ? msg.mode.toLowerCase() : 'minor';
+
+      // helpers kept local to avoid refactors
+      const nameToPc = { C:0, "C#":1, Db:1, D:2, Eb:3, "D#":3, E:4, F:5, "F#":6, Gb:6, G:7, Ab:8, "G#":8, A:9, Bb:10, "A#":10, B:11 };
+      const majorToRelativeMinorPc = (pc) => (pc + 9) % 12;
+
+      let tonicPc = null;
+      if (typeof msg.tonicPc === 'number') tonicPc = ((msg.tonicPc % 12) + 12) % 12;
+      else if (typeof msg.tonic === 'string' && nameToPc[msg.tonic] != null) tonicPc = nameToPc[msg.tonic];
+
+      if (tonicPc !== null && incomingMode === 'major') tonicPc = majorToRelativeMinorPc(tonicPc);
+
+      // Find matching MINOR key only (major keys are disabled in KEYS)
+      if (tonicPc !== null) {
+        k = KEYS.find(x => x.tonic === tonicPc && x.mode === 'minor');
       }
 
       if (k) {
@@ -598,8 +614,10 @@ const keyBC = new BroadcastChannel('music-key');
 function publishKey(k){
   if (!k) return;
 
+  // --- MAJOR MODE DISABLED (commented for easy restore) ---
   // hack minimal : déduire le mode depuis le nom
-  const mode = /major/i.test(k.name) ? 'major' : 'minor';
+  // const mode = /major/i.test(k.name) ? 'major' : 'minor';
+  const mode = 'minor';
 
   const msg = {
     type: 'key',
@@ -838,6 +856,46 @@ function publishKey(k){
     };
   }
 
+  // -------------------- BroadcastChannel-triggered harmony randomization --------------------
+  function initRandomizeChannel(){
+    const randomizeChannel = new BroadcastChannel('randomize_channel');
+    randomizeChannel.onmessage = (event) => {
+      if (event && event.data && event.data.type === 'randomize_all') {
+        console.log("Message 'randomize_all' reçu !");
+
+        // A) Trigger existing randomize buttons
+        const bRandProg = document.getElementById('randProg');
+        const bRandKey = document.getElementById('randKey');
+        const bRandGroove = document.getElementById('randGroove');
+        if (bRandProg) bRandProg.click();
+        if (bRandKey) bRandKey.click();
+        if (bRandGroove) bRandGroove.click();
+
+        // B) Randomize chord extension checkboxes (flow through existing wiring)
+        const cb7 = document.getElementById('add7');
+        const cb9 = document.getElementById('add9');
+        if (cb7 && cb9) {
+          const v7 = Math.random() < 0.5;
+          cb7.checked = v7;
+          cb7.dispatchEvent(new Event('change', { bubbles: true }));
+
+          let v9 = Math.random() < 0.5;
+          if (!v7) v9 = false;
+          cb9.checked = v9;
+          cb9.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // C) Randomize progression / loop length
+        const selLoop = document.getElementById('loopLen');
+        if (selLoop) {
+          const vals = ['4','8','16','32'];
+          selLoop.value = vals[Math.floor(Math.random() * vals.length)];
+          selLoop.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+    };
+  }
+
   // -------------------- Event bindings --------------------
   function bindUI(){
     el.midiOut.addEventListener('change', e=> MIDI.selectById(e.target.value));
@@ -913,6 +971,7 @@ function publishKey(k){
     bindUI();
     MIDI.init();
     initTicker();
+    initRandomizeChannel();
     publishKey(state.key);
   }
 
