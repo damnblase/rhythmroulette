@@ -2,9 +2,16 @@ import '@soundworks/helpers/polyfills.js';
 import '@soundworks/helpers/catch-unhandled-errors.js';
 import { Server } from '@soundworks/core/server.js';
 import { loadConfig, configureHttpRouter } from '@soundworks/helpers/server.js';
+
 import { WebSocketServer } from 'ws';
 import Max from 'max-api';
 import EventEmitter from 'node:events';
+
+import globalDescription from './state-descriptions/global.js';
+import phoneDescription from './state-descriptions/phone.js';
+
+import { computeTempoMean } from './lib/ComputeTempoMean.js';
+import { computeKeyMean } from './lib/ComputeKeyMean.js';
 
 // - General documentation: https://soundworks.dev/
 // - API documentation:     https://soundworks.dev/api
@@ -20,37 +27,11 @@ const eventEmitter = new EventEmitter(); // needed for communication node.script
 // eventEmitter.on('name', name => performer.set('name', name));
 // eventEmitter.on('name', name => console.log(name));
 
-const config = loadConfig(process.env.ENV, import.meta.url);
-
-console.log(`
---------------------------------------------------------
-- launching "${config.app.name}" in "${process.env.ENV || 'default'}" environment
-- [pid: ${process.pid}]
---------------------------------------------------------
-`);
-
-const server = new Server(config);
-configureHttpRouter(server);
-// ici on va partager des choses
-server.stateManager.defineClass('global', {
-  data: {
-    type: 'any',
-    default: {},
-  },
-});
-
-server.stateManager.defineClass('performer', {
-  name: {
-    type: 'string',
-    default: 'perfomer1',
-  },
-});
-
 // init websocket sur 8081 - default messages and variables - Max handler
 // Variables globales
 let wss;
 let wsClients = [];
-let currentBPM = 120; // ?? 
+let currentBPM = 120; // ??
 let isPlaying = false;
 let tickCounter = 0;
 
@@ -75,13 +56,12 @@ function broadcastTick(tickIndex, bpm) {
       client.send(JSON.stringify(msg));
     }
   });
+
   sendToMax('tick', tickIndex, bpm);
-  eventEmitter.emit('tick', tickIndex, bpm);
+  // eventEmitter.emit('tick', tickIndex, bpm);
 }
 
-
-
-function broadcastRandomize(){
+function broadcastRandomize() {
   const msg = {
     type: 'randomize',
   };
@@ -91,8 +71,9 @@ function broadcastRandomize(){
     }
   });
   sendToMax('randomize');
-  eventEmitter.emit('randomize');
+  // eventEmitter.emit('randomize');
 }
+
 // Démarrage du serveur WebSocket
 function startWebSocketServer() {
   try {
@@ -112,35 +93,34 @@ function startWebSocketServer() {
         Max.post('Client WebSocket déconnecté');
       });
 
-    ws.on('message', (data) => {
-  try {
-    const msg = JSON.parse(data.toString());
+      ws.on('message', (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
 
-    // 🔹 Si c'est un message "patterns" venant du client
-    const patternKeys = ['kickpattern','snarepattern','hiHatPattern','tompattern','clappattern'];
-    const isPatternMsg = patternKeys.some(k => k in msg);
+          // 🔹 Si c'est un message "patterns" venant du client
+          const patternKeys = ['kickpattern','snarepattern','hiHatPattern','tompattern','clappattern'];
+          const isPatternMsg = patternKeys.some(k => k in msg);
 
-    if (isPatternMsg) {
-      // Envoi vers Max
-      sendToMax('new_drum_pattern', msg);
-      Max.post("Patterns reçus et envoyés à Max:", JSON.stringify(msg));
-      return; // pas besoin de continuer
-    }
+          if (isPatternMsg) {
+            // Envoi vers Max
+            sendToMax('new_drum_pattern', msg);
+            Max.post("Patterns reçus et envoyés à Max:", JSON.stringify(msg));
+            return; // pas besoin de continuer
+          }
 
-    // 🔹 Gestion des ticks uniquement
-    if (msg.type === 'tick') {
-      sendToMax('tick', msg.count, msg.bpm);
-      return;
-    }
+          // 🔹 Gestion des ticks uniquement
+          if (msg.type === 'tick') {
+            sendToMax('tick', msg.count, msg.bpm);
+            return;
+          }
 
-    // Autres messages non traités pour l'instant
-    Max.post("Message reçu (non géré) :", JSON.stringify(msg));
+          // Autres messages non traités pour l'instant
+          Max.post("Message reçu (non géré) :", JSON.stringify(msg));
 
-  } catch (e) {
-    Max.post(`Erreur de parsing WebSocket: ${e.message}`);
-  }
-});
-
+        } catch (e) {
+          Max.post(`Erreur de parsing WebSocket: ${e.message}`);
+        }
+      });
     });
 
     wss.on('error', (err) => {
@@ -172,9 +152,11 @@ Max.addHandler("stop", () => {
 
 Max.addHandler("bpm", (bpm) => {
   currentBPM = parseFloat(bpm);
-  sendToMax('bpm', currentBPM);
-  eventEmitter.emit('bpm', currentBPM);
+  // sendToMax('bpm', currentBPM);
+  // eventEmitter.emit('bpm', currentBPM);
   Max.post(`BPM défini à: ${currentBPM}`);
+  // to update global state on ableton change tempo
+  // Max.post(global.getValues());
 });
 
 Max.addHandler("tick", () => {
@@ -185,7 +167,7 @@ Max.addHandler("tick", () => {
 
 Max.addHandler('key', (note, mode = 'minor') => { // on le fait là mais on aurait pu le mettre dans une broadcastKey
   // Normalisation simple
-  const tonic = String(note).trim(); 
+  const tonic = String(note).trim();
   mode = mode.toLowerCase() === 'major' ? 'major' : 'minor';
 
   // Message minimal à envoyer
@@ -212,21 +194,80 @@ Max.addHandler("bang", () => {
 });
 
 Max.addHandler('randomize', () => {
-    broadcastRandomize();
+  broadcastRandomize();
 
 });
 // Démarrage automatique
 Max.post("Initialisation du script WebSocket...");
 wss = startWebSocketServer();
 
+// data computing
 
+// ------------------------------------------------------
+// ------------------------------------------------------
+// soundworks stuff
+// ------------------------------------------------------
+// ------------------------------------------------------
 
+// configure
+const config = loadConfig(process.env.ENV, import.meta.url);
 
+console.log(`
+--------------------------------------------------------
+- launching "${config.app.name}" in "${process.env.ENV || 'default'}" environment
+- [pid: ${process.pid}]
+--------------------------------------------------------
+`);
 
-//
+const server = new Server(config);
+configureHttpRouter(server);
 
+// global state descriptions in './state-descriptions/global.js'
+server.stateManager.defineClass('global', globalDescription);
+server.stateManager.defineClass('phone', phoneDescription)
+
+// @todo : who is performer ?
+server.stateManager.defineClass('performer', {
+  name: {
+    type: 'string',
+    default: 'perfomer1',
+  },
+});
 
 await server.start();
 
+// create and get descriptions
 const global = await server.stateManager.create('global');
+const phones = await server.stateManager.getCollection('phone');
+
+// execute functions on if updates in global state
+global.onUpdate((updates) => {
+  // Max.post('updates')
+  for (let [name, value] of Object.entries(updates)) {
+    // Max.post(updates);
+    switch(name) {
+      case 'tempo': {
+        sendToMax('liveAPI', 'tempo', value);
+        // eventEmitter.emit('bpm', value);
+        currentBPM = value;
+      } break;
+      case 'key': {
+        sendToMax('newKey', value)
+      }
+    }
+  }
+})
+
+// compute stuff every 50 ms (e.g. average tempo vote)
+setInterval(() => {
+  // const newTempo = computeTempo(phones.get('tempoVote'));
+  const newTempo = computeTempoMean(phones.get('tempoVote'));
+  const newKey = computeKeyMean(phones.get('keyVote'));
+  global.set('key', newKey);
+
+  if (newTempo !== 0) {
+    // Max.post(`new tempo`, newTempo);
+    global.set('tempo', newTempo);
+  }
+}, 50);
 

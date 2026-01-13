@@ -20,8 +20,10 @@ async function main($container) {
 
   await client.start();
 
+  const global = await client.stateManager.attach('global');
   const performers = await client.stateManager.getCollection('performer');
   performers.onChange(renderApp);
+
 
   function renderApp() {
     render(html`
@@ -32,6 +34,7 @@ async function main($container) {
         </header>
         <section>
           <p>Hello ${client.config.app.name}!</p>
+          <p>set data</p>
           <pre><code>
 ${JSON.stringify(performers.getValues(), null, 2)}
           </code></pre>
