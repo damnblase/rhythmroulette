@@ -1,5 +1,6 @@
 import '@soundworks/helpers/polyfills.js';
 import { Client } from '@soundworks/core/client.js';
+import ClientPluginPlatformInit from '@soundworks/plugin-platform-init/client.js';
 import { loadConfig, launcher } from '@soundworks/helpers/browser.js';
 import { html, render } from 'lit';
 import '@ircam/sc-components';
@@ -14,6 +15,10 @@ async function main($container) {
   const config = loadConfig();
   const client = new Client(config);
 
+  const audioContext = new AudioContext();
+
+  client.pluginManager.register('platform-init', ClientPluginPlatformInit, { audioContext });
+
   // Eventually register plugins
   // client.pluginManager.register('my-plugin', plugin);
 
@@ -21,6 +26,8 @@ async function main($container) {
   launcher.register(client, { initScreensContainer: $container });
 
   await client.start();
+
+  console.log(audioContext.state === 'running');
   const global = await client.stateManager.attach('global');
   const phone = await client.stateManager.create('phone');
 
