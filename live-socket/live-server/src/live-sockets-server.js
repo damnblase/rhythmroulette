@@ -1,6 +1,7 @@
 import '@soundworks/helpers/polyfills.js';
 import '@soundworks/helpers/catch-unhandled-errors.js';
 import { Server } from '@soundworks/core/server.js';
+import ServerPluginPlatformInit from '@soundworks/plugin-platform-init/server.js';
 import { loadConfig, configureHttpRouter } from '@soundworks/helpers/server.js';
 
 import { WebSocketServer } from 'ws';
@@ -221,6 +222,8 @@ console.log(`
 
 const server = new Server(config);
 configureHttpRouter(server);
+
+server.pluginManager.register('platform-init', ServerPluginPlatformInit);
 
 // global state descriptions in './state-descriptions/global.js'
 server.stateManager.defineClass('global', globalDescription);
