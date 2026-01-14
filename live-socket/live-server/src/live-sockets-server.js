@@ -13,6 +13,7 @@ import phoneDescription from './state-descriptions/phone.js';
 
 import { computeTempoMean } from './lib/ComputeTempoMean.js';
 import { computeKeyMean } from './lib/ComputeKeyMean.js';
+import { computeStyleMean } from './lib/ComputeStyleMean.js';
 
 // - General documentation: https://soundworks.dev/
 // - API documentation:     https://soundworks.dev/api
@@ -249,28 +250,43 @@ global.onUpdate((updates) => {
   for (let [name, value] of Object.entries(updates)) {
     // Max.post(updates);
     switch(name) {
+
       case 'tempo': {
         sendToMax('liveAPI', 'tempo', value);
         // eventEmitter.emit('bpm', value);
         currentBPM = value;
       } break;
+
       case 'key': {
-        sendToMax('newKey', value)
-      }
+        sendToMax('newKey', value);
+      } break;
+
+      case 'style': {
+        sendToMax('newStyle', value);
+      } break;
     }
   }
 })
 
 // compute stuff every 50 ms (e.g. average tempo vote)
 setInterval(() => {
-  // const newTempo = computeTempo(phones.get('tempoVote'));
-  const newTempo = computeTempoMean(phones.get('tempoVote'));
-  const newKey = computeKeyMean(phones.get('keyVote'));
-  global.set('key', newKey);
 
+  // update tempo
+  const newTempo = computeTempoMean(phones.get('tempoVote'));
   if (newTempo !== 0) {
     // Max.post(`new tempo`, newTempo);
     global.set('tempo', newTempo);
   }
+
+  // update key
+  const newKey = computeKeyMean(phones.get('keyVote'));
+  global.set('key', newKey);
+
+  //update style
+  const newStyle = computeStyleMean(phones.get('styleVote'));
+  global.set('style', newStyle)
+
+
+
 }, 50);
 

@@ -31,13 +31,29 @@ async function main($container) {
   const global = await client.stateManager.attach('global');
   const phone = await client.stateManager.create('phone');
 
+  // @todo: dynamically load filenames from folder (not hardcoded)
+  const availableStyles = [
+    'boom bap',
+    'drill3',
+    'footwork2',
+    'g funk',
+    'house 3',
+    'jerk',
+    'postpunk 3',
+    'postpunksixteenth2',
+    'rap6',
+    'reggae',
+    'twostep',
+    'wheezypure',
+  ];
+
   function renderApp() {
     console.log(phone.get('tempoVote'))
     console.log('globalTempo', global.get('tempo'));
+
     render(html`
       <div class="simple-layout">
         <p>Hello ${client.config.app.name}!</p>
-        <p>${global.get('tempo')}</p>
         <div style="padding-bottom: 4px">
           <sc-text>vote for a tempo</sc-text>
           <sc-slider
@@ -49,14 +65,23 @@ async function main($container) {
           ></sc-slider>
           <sw-credits .infos="${client.config.app}"></sw-credits>
         </div>
-        <sc-text>vote for a key</sc-text>
         <div style="padding-bottom: 4px">
+          <sc-text>vote for a key</sc-text>
           <sc-keyboard
             input-mode=stateful
             mode=monophonic
             range= 13
             @input=${e => phone.set('keyVote', e.detail.value)}
           ></sc-keyboard>
+        </div>
+        <div style="padding-bottom: 4px">
+          <sc-text>vote for a style</sc-text>
+          <sc-tab
+            style="width: auto;"
+            orientation=vertical
+            .options=${availableStyles}
+            @change=${e => phone.set('styleVote', e.detail.value)}
+          ></sc-tab>
         </div>
       </div>
     `, $container);

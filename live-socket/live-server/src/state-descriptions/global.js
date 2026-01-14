@@ -12,4 +12,9 @@ export default {
     default: null,
     nullable: true,
   },
+  style: {
+    type: 'any',
+    default: null,
+    nullable: true,
+  }
 }

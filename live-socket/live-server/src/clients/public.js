@@ -34,7 +34,22 @@ async function main($container) {
     'A': 69,
     'A#': 70,
     'B': 71,
-  }
+  };
+
+  const availableStyles = [
+    'boom bap',
+    'drill3',
+    'footwork2',
+    'g funk',
+    'house 3',
+    'jerk',
+    'postpunk 3',
+    'postpunksixteenth2',
+    'rap6',
+    'reggae',
+    'twostep',
+    'wheezypure',
+  ];
 
   const global = await client.stateManager.attach('global');
 
@@ -60,6 +75,17 @@ async function main($container) {
         </div>
         <sw-credits .infos="${client.config.app}"></sw-credits>
       </div>
+        <div style="padding-bottom: 4px">
+          <sc-text>Current style</sc-text>
+          <sc-tab
+            style="width: auto;"
+            orientation=vertical
+            .options=${availableStyles}
+            value=${global.get('style')}
+          ></sc-tab>
+        </div>
+        <sw-credits .infos="${client.config.app}"></sw-credits>
+      </div>
     `, $container);
   }
 
@@ -73,6 +99,7 @@ async function main($container) {
       console.log($klav, midiNote);
       $klav._handleKeyPress(midiNote, 127);
     }
+    renderApp();
   }, true);
 }
 

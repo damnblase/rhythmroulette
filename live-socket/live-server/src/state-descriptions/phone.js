@@ -10,4 +10,9 @@ export default {
     nullable: true,
     default: null,
   },
+  styleVote: {
+    type: 'any',
+    nullable: true,
+    default: null,
+  },
 }
