@@ -16,8 +16,8 @@ async function main($container) {
   const client = new Client(config);
 
   const audioContext = new AudioContext();
-
   client.pluginManager.register('platform-init', ClientPluginPlatformInit, { audioContext });
+  console.log(audioContext.state === 'running');
 
   // Eventually register plugins
   // client.pluginManager.register('my-plugin', plugin);
@@ -27,9 +27,46 @@ async function main($container) {
 
   await client.start();
 
-  console.log(audioContext.state === 'running');
   const global = await client.stateManager.attach('global');
   const phone = await client.stateManager.create('phone');
+
+  // audio synth
+  setInterval(() => {
+    console.log('trigger')
+
+    const now = audioContext.currentTime;
+
+    const env = new GainNode(audioContext, { gain: 0 });
+    env.connect(audioContext.destination);
+
+    const grainTime = Math.random() * 5;
+
+
+    env.gain
+      .setValueAtTime(0, now)
+      .linearRampToValueAtTime(1, now + 0.01)
+      .exponentialRampToValueAtTime(0.001, now + grainTime);
+
+      const osc = new OscillatorNode(audioContext);
+
+      oscTypes = ['sine', 'rectangle', 'triangle', 'sawtooth'];
+      osc.type = oscTypes[Math.random() * oscTypes.length];
+
+      const availableNotes = global.get('availableNotes')
+      const randomIndex = Math.floor(Math.random() * availableNotes.length)
+
+      console.log(availableNotes[randomIndex]);
+
+      osc.frequency.value = availableNotes[randomIndex];
+      osc.connect(env);
+      osc.start(now);
+      osc.stop(now + 2);
+
+  }, 2000 + Math.random() * 500);
+
+
+
+
 
   // @todo: dynamically load filenames from folder (not hardcoded)
   const availableStyles = [
@@ -47,9 +84,8 @@ async function main($container) {
     'wheezypure',
   ];
 
+  // render
   function renderApp() {
-    console.log(phone.get('tempoVote'))
-    console.log('globalTempo', global.get('tempo'));
 
     render(html`
       <div class="simple-layout">

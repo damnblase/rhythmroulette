@@ -54,9 +54,11 @@ async function main($container) {
   const global = await client.stateManager.attach('global');
 
   function renderApp() {
+    console.log(global.get('availableNotes'))
     render(html`
       <div class="simple-layout">
         <p>Hello ${client.config.app.name}!</p>
+        <p>${JSON.stringify(global.get('availableNotes'))}</p>
         <div style="padding-bottom: 4px">
           <sc-text>Current BPM</sc-text>
           <sc-slider

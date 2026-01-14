@@ -16,5 +16,10 @@ export default {
     type: 'any',
     default: null,
     nullable: true,
-  }
+  },
+  availableNotes: {
+    type: 'any',
+    default: null,
+    nullable: true,
+  },
 }

@@ -12,3 +12,5 @@ clients:
     runtime: browser
   public:
     runtime: browser
+  midi_chords_sender:
+    runtime: node
