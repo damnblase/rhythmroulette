@@ -2,6 +2,7 @@ import '@soundworks/helpers/polyfills.js';
 import { Client } from '@soundworks/core/client.js';
 import { loadConfig, launcher } from '@soundworks/helpers/browser.js';
 import { html, render } from 'lit';
+import '@ircam/sc-components';
 
 // - General documentation: https://soundworks.dev/
 // - API documentation:     https://soundworks.dev/api
@@ -34,7 +35,13 @@ async function main($container) {
         </header>
         <section>
           <p>Hello ${client.config.app.name}!</p>
-          <p>set data</p>
+          <div style="padding-bottom: 4px">
+            <sc-tab
+              .options=${global.getDescription('state').list}
+              value=${global.get('state')}
+              @change=${e => global.set('state', e.detail.value)}
+            ></sc-tab>
+          </div>
           <pre><code>
 ${JSON.stringify(performers.getValues(), null, 2)}
           </code></pre>
@@ -44,6 +51,7 @@ ${JSON.stringify(performers.getValues(), null, 2)}
   }
 
   renderApp();
+  global.onUpdate(() => renderApp());
 }
 
 launcher.execute(main, {

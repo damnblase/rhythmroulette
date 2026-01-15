@@ -3,6 +3,11 @@ export default {
     type: 'any',
     default: {},
   },
+  state: {
+    type: 'enum',
+    list: ['init', 'votes', 'synth', 'end'],
+    default: 'init'
+  },
   tempo: {
     type: 'float',
     default: 80,
