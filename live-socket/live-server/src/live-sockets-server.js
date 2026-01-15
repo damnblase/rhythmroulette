@@ -244,19 +244,24 @@ await server.start();
 const global = await server.stateManager.create('global');
 const phones = await server.stateManager.getCollection('phone');
 
+Max.addHandler("state", (state) => {
+  global.set('state', state);
+})
+
 // execute functions on if updates in global state
 global.onUpdate((updates) => {
   // Max.post('updates')
   for (let [name, value] of Object.entries(updates)) {
-    // Max.post(updates);
+    Max.post(updates);
     switch(name) {
-
+      case 'state': {
+        sendToMax('newState', value);
+      } break;
       case 'tempo': {
         sendToMax('liveAPI', 'tempo', value);
         // eventEmitter.emit('bpm', value);
-        currentBPM = value;
+        // currentBPM = value;
       } break;
-
       case 'key': {
         sendToMax('newKey', value);
       } break;
