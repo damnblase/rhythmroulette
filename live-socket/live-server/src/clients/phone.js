@@ -57,7 +57,7 @@ async function main($container) {
         // oscType = oscTypes[Math.floor(Math.random() * oscTypes.length)]
         // osc.type = oscType;
 
-        const availableNotes = global.get('availableNotes')
+        const availableNotes = global.get('availableNotes');
         const randomIndex = Math.floor(Math.random() * availableNotes.length)
         const oscFreq = availableNotes[randomIndex];
 

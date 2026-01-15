@@ -27,6 +27,7 @@ async function main($container) {
 
 
   function renderApp() {
+    console.log(global.get('tempo'));
     render(html`
       <div class="controller-layout">
         <header>
