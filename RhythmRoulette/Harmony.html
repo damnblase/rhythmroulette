@@ -4,169 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ProgLooper — External-Ticker MIDI Chord Player (Minor Only + Jitter)</title>
-  <style>
-    :root { --bg:#0b0d10; --panel:#12161b; --muted:#7a8a99; --fg:#e8f0f7; --accent:#57b2ff; --accent2:#8ef; }
-    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;}
-    .wrap{max-width:1100px;margin:0 auto;padding:24px;display:grid;gap:16px;}
-    h1{font: size 14px;margin:0 0 6px;color:#cfe6ff}
-    .grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
-    .card{background:var(--panel);border:1px solid #182029;border-radius:14px;padding:14px 16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    label{font-size:14px;color:var(--muted)}
-    select,button,input[type="checkbox"],input[type="number"]{background:#0e1318;color:var(--fg);border:1px solid #2a3642;border-radius:10px;padding:10px 12px;font-size:14px}
-    input[type="number"]{width:90px}
-    button{cursor:pointer}
-    button.primary{background:linear-gradient(180deg,#2a7bd9,#1769c2);border-color:#1a5fb8}
-    button.ghost{background:#0e1318}
-    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0e1318;border:1px solid #22313e;color:#b9d6f8;font-size:12px}
-    .muted{color:var(--muted)}
-    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
-    .big{font-size:14px; letter-spacing:.2px}
-    .stack{display:flex;flex-direction:column;gap:10px}
-    .divider{height:1px;background:#1d2731;margin:8px 0}
-    .flex-1{flex:1}
-    .nowrap{white-space:nowrap}
-    .progression{font-size:14px}
-    .statusline{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
-    .statuscell{background:#0e1318;border:1px solid #1f2b36;border-radius:10px;padding:8px 10px}
-
-    /* =========================================================
-       Minimal UI override (presentation-only)
-       Keep visible controls:
-       - #randProg, #randKey, #keySelect, #keySource
-       - #add7, #add9 (labeled "7" and "9")
-       - #loopLen
-       - #enableJitter, #jitterMax
-       - #randGroove
-       - #midiOut
-       - #progLabel (current chord progression display)
-       Everything else hidden.
-       ========================================================= */
-
-    html, body {
-      background: #ffffff !important;
-      color: #000000 !important;
-    }
-
-    .wrap{
-      max-width: 100% !important;
-      padding: 18px !important;
-      gap: 10px !important;
-    }
-
-    header { display: none !important; }
-    .grid{ grid-template-columns: 1fr !important; gap: 0 !important; }
-
-    /* Remove card styling / layout clutter */
-    .card{
-      background: transparent !important;
-      border: 0 !important;
-      border-radius: 0 !important;
-      padding: 0 !important;
-      box-shadow: none !important;
-    }
-
-    /* Hide the entire debug/status card (second card) */
-    .grid > .card.stack:nth-child(2){ display:none !important; }
-
-    /* Hide dividers */
-    .divider{ display:none !important; }
-
-    /* Hide labels by default */
-    label{ display:none !important; }
-
-    /* Minimal layout rows */
-    .row{
-      gap: 10px !important;
-      flex-wrap: wrap !important;
-      align-items: center !important;
-    }
-
-    /* Make controls clean on white */
-    select,button,input[type="checkbox"],input[type="number"]{
-      background:#ffffff !important;
-      color:#000000 !important;
-      border:1px solid #000000 !important;
-      border-radius:10px !important;
-      padding:10px 12px !important;
-      font-size:14px !important;
-      box-shadow:none !important;
-      appearance: auto;
-    }
-    button.primary{
-      background:#ffffff !important;
-      border-color:#000000 !important;
-    }
-    button.ghost{
-      background:#ffffff !important;
-    }
-
-    /* Hide all non-essential UI elements */
-    #panic,
-    #midiStatus,
-    #keyExtStatus,
-    #loopInfo,
-    #jitterInfo,
-    #placementInfo,
-    #nowPlaying,
-    .pill,
-    .muted,
-    .statusline,
-    .statuscell {
-      display:none !important;
-    }
-
-    /* Keep progression visible and clean */
-    #progLabel{
-      display:block !important;
-      color:#000000 !important;
-      font-size:14px !important;
-      line-height:1.25 !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      flex: 1 1 auto !important;
-      min-width: 220px;
-    }
-
-    /* Checkbox containers where we want to keep inputs but hide text (used for jitter) */
-    label.keepLabel{
-      display:inline-flex !important;
-      align-items:center !important;
-      gap:0 !important;
-      font-size:0 !important;       /* hides label text */
-      color:transparent !important;
-      white-space:nowrap !important;
-    }
-    label.keepLabel input[type="checkbox"]{
-      margin:0 !important;
-    }
-    label.keepLabel input[type="number"]{
-      margin:0 !important;
-    }
-
-    /* Checkbox labels that must be visible as "7" and "9" */
-    label.keepCheckboxLabel{
-      display:inline-flex !important;
-      align-items:center !important;
-      gap:10px !important;
-      font-size:14px !important;
-      color:#000000 !important;
-      white-space:nowrap !important;
-    }
-    label.keepCheckboxLabel input[type="checkbox"]{
-      margin:0 !important;
-    }
-
-    /* Show only the MIDI Out text label */
-    label.keepTextLabel{
-      display:inline-flex !important;
-      align-items:center !important;
-      gap:10px !important;
-      font-size:14px !important;
-      color:#000000 !important;
-      white-space:nowrap !important;
-    }
-  </style>
+  <link rel="stylesheet" href="./rr-ui.css">
+  <script src="./rr-ui.js" defer></script>
 </head>
 <body>
   <div class="wrap">
@@ -209,6 +48,7 @@
             <option value="4">4 beats</option>
             <option value="8">8 beats</option>
             <option value="16">16 beats</option>
+            <option value="32">32 beats</option>
           </select>
           <span class="pill" id="loopInfo">—</span>
         </div>
@@ -502,7 +342,7 @@ function pcToNearestMidi(pc, lo=54, hi=66){
   };
 
   // -------------------- App State --------------------
-  const LOOP_CHOICES = [4,8,16];
+  const LOOP_CHOICES = [4,8,16,32];
   const state = {
     progression: pickRandom(PROGRESSIONS),
     keySource: 'manual',
@@ -887,7 +727,7 @@ function publishKey(k){
         // C) Randomize progression / loop length
         const selLoop = document.getElementById('loopLen');
         if (selLoop) {
-          const vals = ['4','8','16'];
+          const vals = ['4','8','16','32'];
           selLoop.value = vals[Math.floor(Math.random() * vals.length)];
           selLoop.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -924,7 +764,7 @@ function publishKey(k){
 
     el.loopLen.addEventListener('change', e=>{
       const L = parseInt(e.target.value,10);
-      if (![4,8,16].includes(L)) return;
+      if (![4,8,16,32].includes(L)) return;
       state.pending.loopBeats = L;
       state.pending.rejitter = true;
     });
