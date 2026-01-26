@@ -48,7 +48,6 @@
             <option value="4">4 beats</option>
             <option value="8">8 beats</option>
             <option value="16">16 beats</option>
-            <option value="32">32 beats</option>
           </select>
           <span class="pill" id="loopInfo">—</span>
         </div>
@@ -342,7 +341,7 @@ function pcToNearestMidi(pc, lo=54, hi=66){
   };
 
   // -------------------- App State --------------------
-  const LOOP_CHOICES = [4,8,16,32];
+  const LOOP_CHOICES = [4,8,16];
   const state = {
     progression: pickRandom(PROGRESSIONS),
     keySource: 'manual',
@@ -727,7 +726,7 @@ function publishKey(k){
         // C) Randomize progression / loop length
         const selLoop = document.getElementById('loopLen');
         if (selLoop) {
-          const vals = ['4','8','16','32'];
+          const vals = ['4','8','16'];
           selLoop.value = vals[Math.floor(Math.random() * vals.length)];
           selLoop.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -764,7 +763,7 @@ function publishKey(k){
 
     el.loopLen.addEventListener('change', e=>{
       const L = parseInt(e.target.value,10);
-      if (![4,8,16,32].includes(L)) return;
+      if (![4,8,16].includes(L)) return;
       state.pending.loopBeats = L;
       state.pending.rejitter = true;
     });
