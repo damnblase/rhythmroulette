@@ -856,10 +856,6 @@ button{ transition: none !important; }
         slider.step = "1";
         slider.value = "0";
 
-        const readout = document.createElement("span");
-        readout.className = "pill small mono";
-        readout.textContent = "0";
-
         const labelBtn = document.createElement("button");
         labelBtn.dataset.widthGroup = WIDTH_GROUP.SLIDERS;
         labelBtn.textContent = `Slider ${i + 1}`;
@@ -891,11 +887,10 @@ button{ transition: none !important; }
         els.sliders.appendChild(labelBtn);
         els.sliders.appendChild(meta);
 
-        // Put slider + readout pill into one cell (no rename box anymore)
+        // Put slider into one cell (no rename box anymore)
         const cell = document.createElement("div");
         cell.className = "row";
         cell.appendChild(slider);
-        cell.appendChild(readout);
 
         els.sliders.appendChild(cell);
       }
