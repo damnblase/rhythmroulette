@@ -363,12 +363,17 @@ function pcToNearestMidi(pc, lo=54, hi=66){
     silenceTimer:null,
     bpm: 120,
     hiSpeed: false,
+    // ---- Syncopated chord re-strikes (persistent per progression) ----
+    repeatOffsets: [],        // per-chord: array of relative tick offsets within chord window (excluding 0)
+    repeatTicksAbs: [],        // per-chord: array of absolute internal ticks (computed from boundsTicks)
+    repeatTickSets: [],        // per-chord: Set for fast lookup (rebuilt from repeatTicksAbs)
   };
 
   // Default key: C Minor
   state.key = KEYS.find(k => k.tonicName === 'C' && k.mode === 'minor') || pickRandom(KEYS);
 
   recomputeBoundariesAndJitter(true);
+  regenerateRepeatOffsetsForCurrentProgression();
 // ------------------- Key ws ---------------
   let keyWS = null;
 
@@ -559,7 +564,8 @@ function publishKey(k){
     const atChordBoundary = (state.currentChordIndex !== idxNow);
     if (atLoopStart || atChordBoundary){
       let rebound=false;
-      if (state.pending.progression){ state.progression = state.pending.progression; state.pending.progression=null; rebound=true; }
+      let progressionChanged = false;
+      if (state.pending.progression){ state.progression = state.pending.progression; state.pending.progression=null; rebound=true; progressionChanged = true; }
       if (state.pending.key){
         state.key = state.pending.key; state.pending.key=null; el.keySelect.value = KEYS.indexOf(state.key);
         publishKey(state.key);
@@ -568,7 +574,17 @@ function publishKey(k){
       if (state.pending.jitterEnabled !== null){ state.jitterEnabled = !!state.pending.jitterEnabled; state.pending.jitterEnabled=null; rebound=true; }
       if (state.pending.jitterMax !== null){ state.jitterMax = Math.max(0, Math.min(8, state.pending.jitterMax|0)); state.pending.jitterMax=null; rebound=true; }
       if (state.pending.rejitter){ state.pending.rejitter=false; rebound=true; }
-      if (rebound){ recomputeBoundariesAndJitter(); refreshProgLabel(); refreshLoopUI(); refreshJitterUI(); refreshPlacementUI(); }
+      if (rebound){
+        recomputeBoundariesAndJitter();
+        // Repeat patterns must persist loop-to-loop and change only when progression changes.
+        if (progressionChanged){
+          regenerateRepeatOffsetsForCurrentProgression();
+        }
+        refreshProgLabel();
+        refreshLoopUI();
+        refreshJitterUI();
+        refreshPlacementUI();
+      }
     }
   }
 
@@ -592,10 +608,119 @@ function publishKey(k){
 
     state.boundsTicks = B.slice();
 
+    // repeat lookups depend on bounds; keep patterns stable, only recompute absolute tick positions
+    if (Array.isArray(state.repeatOffsets) && state.repeatOffsets.length){
+      rebuildRepeatTickLookups();
+    }
+
     if (!initial){
       state.currentChordIndex = -1;
     }
   }
+
+  // -------------------- Syncopated chord repeat patterns (persistent across loops) --------------------
+  function buildSyncopatedOffsetsForWindow(lenTicks){
+    // lenTicks is chord window length in ticks (end-start)
+    // Returns an array of relative offsets (1..lenTicks-1) to re-strike.
+    // "Syncopated" bias: prefer off-beat ticks (odd 16ths) over strong beats.
+    if (lenTicks <= 2) return []; // nothing sensible
+
+    // Decide whether this chord has repeats at all
+    const pNo = 0.60; // majority of chords = no repeats
+    if (Math.random() < pNo) return [];
+
+    // Max repeats scales gently with window size but stays modest
+    const maxRepeats = Math.max(1, Math.min(3, Math.floor((lenTicks - 1) / 3)));
+    const nRepeats = 1 + Math.floor(Math.random() * maxRepeats);
+
+    // Build weighted candidate list
+    const candidates = [];
+    const weights = [];
+    for (let o = 1; o < lenTicks; o++){
+      // exclude the very last tick of the window to avoid "kissing" the next boundary
+      if (o === lenTicks - 1) continue;
+
+      const absIsBeat = (o % 4 === 0);
+      const absIsEighth = (o % 2 === 0);
+
+      // Strong-beat penalty, offbeat preference
+      let w = 1;
+      if (absIsBeat) w = 0.10;
+      else if (absIsEighth) w = 0.45;
+      else w = 1.0; // odd 16ths
+
+      // Avoid immediate retrigger right after the chord boundary for clarity
+      if (o === 1) w *= 0.35;
+
+      if (w > 0){
+        candidates.push(o);
+        weights.push(w);
+      }
+    }
+
+    if (!candidates.length) return [];
+
+    // Sample without replacement using weights
+    const out = [];
+    const used = new Set();
+    for (let k=0; k<nRepeats; k++){
+      let total = 0;
+      for (let i=0;i<candidates.length;i++){
+        if (!used.has(i)) total += weights[i];
+      }
+      if (total <= 0) break;
+
+      let r = Math.random() * total;
+      let pickI = -1;
+      for (let i=0;i<candidates.length;i++){
+        if (used.has(i)) continue;
+        r -= weights[i];
+        if (r <= 0){ pickI = i; break; }
+      }
+      if (pickI < 0) break;
+      used.add(pickI);
+      out.push(candidates[pickI]);
+    }
+
+    out.sort((a,b)=>a-b);
+    return out;
+  }
+
+  function regenerateRepeatOffsetsForCurrentProgression(){
+    // Generate per-chord offsets ONCE per progression (persistent until progression changes)
+    const N = state.progression.length;
+    state.repeatOffsets = new Array(N);
+    for (let k=0;k<N;k++){
+      const start = state.boundsTicks[k] ?? 0;
+      const end   = state.boundsTicks[k+1] ?? (4*state.loopBeats);
+      const len   = Math.max(0, (end - start)|0);
+      state.repeatOffsets[k] = buildSyncopatedOffsetsForWindow(len);
+    }
+    rebuildRepeatTickLookups(); // derive abs ticks + sets
+  }
+
+  function rebuildRepeatTickLookups(){
+    // Recompute absolute ticks + sets based on current boundsTicks and stored relative offsets
+    const N = state.progression.length;
+    state.repeatTicksAbs = new Array(N);
+    state.repeatTickSets = new Array(N);
+    for (let k=0;k<N;k++){
+      const start = state.boundsTicks[k] ?? 0;
+      const end   = state.boundsTicks[k+1] ?? (4*state.loopBeats);
+      const len   = Math.max(0, (end - start)|0);
+      const offs  = Array.isArray(state.repeatOffsets[k]) ? state.repeatOffsets[k] : [];
+      const abs   = [];
+      for (const o of offs){
+        const oo = o|0;
+        if (oo > 0 && oo < len && oo !== (len - 1)){
+          abs.push(start + oo);
+        }
+      }
+      state.repeatTicksAbs[k] = abs;
+      state.repeatTickSets[k] = new Set(abs);
+    }
+  }
+
 
   // -------------------- Playback engine (driven by external ticks) --------------------
   function processTick(msg){
@@ -655,6 +780,20 @@ function publishKey(k){
       const chordName = describeChord(rn, state.key, state.add7, state.add9);
       document.getElementById('nowPlaying').textContent = `Chord ${idx+1}/${state.progression.length}: ${rn} → ${chordName}`;
     }
+    // Syncopated re-strikes inside the active chord window (strictly on the tick grid)
+    if (!boundaryChange){
+      const set = state.repeatTickSets && state.repeatTickSets[idx];
+      if (set && set.has(iTick)){
+        // Re-trigger same chord: NOTE OFF then NOTE ON (audible repeat), keep channels unchanged
+        for (const n of state.currentNotes) MIDI.noteOff(n);                 // Ch.1
+        if (state.currentRootCh2 >= 0) MIDI.noteOffCh(state.currentRootCh2, 1); // Ch.2
+
+        for (const n of state.currentNotes) MIDI.noteOn(n);                  // Ch.1
+        if (state.currentRootCh2 >= 0) MIDI.noteOnCh(state.currentRootCh2, 1); // Ch.2
+      }
+    }
+
+
 
     state.lastTick = t;
   }
