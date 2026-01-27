@@ -59,6 +59,12 @@
       font-size: 14px;
     }
 
+    .minui-controls{
+      display:flex;
+      align-items:center;
+      gap: var(--ui-gap);
+    }
+
     .dark-toggle{
       font-family: var(--ui-font);
       font-size: 14px;
@@ -73,6 +79,27 @@
 
     .dark-toggle:focus{
       outline: none;
+    }
+
+    .icon-toggle{
+      font-family: var(--ui-font);
+      font-size: 14px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      color: var(--ui-fg);
+      line-height: 0;
+    }
+
+    .icon-toggle:focus{
+      outline: none;
+    }
+
+    .icon-toggle::-moz-focus-inner{
+      border: 0;
     }
 
     .minui-row{
@@ -108,6 +135,46 @@
       overflow-y: auto;
     }
 
+    #singleView{
+      padding: 0;
+    }
+
+    .rr-tabs{
+      display:flex;
+      flex-wrap:wrap;
+      gap: var(--ui-gap);
+      margin: 0 0 var(--ui-gap) 0;
+    }
+
+    .rr-tab{
+      font-family: var(--ui-font);
+      font-size: 14px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      color: var(--ui-fg);
+    }
+
+    .rr-tab:focus{
+      outline: none;
+    }
+
+    .rr-tab[aria-selected="true"]{
+      text-decoration: underline;
+    }
+
+    .rr-single iframe{
+      width: 100%;
+      height: calc(100vh - 190px);
+      max-height: none;
+      border: 0;
+      display:block;
+      background: var(--ui-bg);
+    }
+
     /* =========================================================
       DARK MODE (GLOBAL DISPLAY INVERSION)
     ========================================================= */
@@ -129,56 +196,70 @@
 
     <div class="minui-header">
       <div class="minui-title">RR</div>
-      <button id="darkModeToggle" class="dark-toggle">dark</button>
+      <div class="minui-controls">
+        <button id="viewModeToggle" class="icon-toggle" type="button" aria-label="Toggle view"></button>
+        <button id="darkModeToggle" class="dark-toggle">dark</button>
+      </div>
     </div>
 
-    <div class="minui-row">
+    <div id="gridView">
+      <div class="minui-row">
 
-      <div class="minui-frame">
-        <div class="minui-frame-header">Cadence</div>
-        <iframe src="Cadence.html"></iframe>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">Cadence</div>
+          <iframe src="Cadence.html"></iframe>
+        </div>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">Rhythm</div>
+          <iframe src="Rhythm.html"></iframe>
+        </div>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">Harmony</div>
+          <iframe src="Harmony.html"></iframe>
+        </div>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">Bassline</div>
+          <iframe src="Bassline.html"></iframe>
+        </div>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">Shaker</div>
+          <iframe src="Shaker.html"></iframe>
+        </div>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">Ride</div>
+          <iframe src="Ride.html"></iframe>
+        </div>
+
+        <div class="minui-frame">
+          <div class="minui-frame-header">MIDI Control</div>
+          <iframe src="midicontrol.html"></iframe>
+        </div>
       </div>
+    </div>
 
-      <div class="minui-frame">
-        <div class="minui-frame-header">Rhythm</div>
-        <iframe src="Rhythm.html"></iframe>
+    <div id="singleView" hidden>
+      <div class="rr-tabs" id="moduleTabs"></div>
+      <div class="minui-frame rr-single">
+        <div class="minui-frame-header" id="singleHeader">Cadence</div>
+        <iframe id="singleIframe" src="Cadence.html"></iframe>
       </div>
-
-      <div class="minui-frame">
-        <div class="minui-frame-header">Harmony</div>
-        <iframe src="Harmony.html"></iframe>
-      </div>
-
-      <div class="minui-frame">
-        <div class="minui-frame-header">Bassline</div>
-        <iframe src="Bassline.html"></iframe>
-      </div>
-
-      <div class="minui-frame">
-        <div class="minui-frame-header">Shaker</div>
-        <iframe src="Shaker.html"></iframe>
-      </div>
-
-      <div class="minui-frame">
-        <div class="minui-frame-header">Ride</div>
-        <iframe src="Ride.html"></iframe>
-      </div>
-
-      <div class="minui-frame">
-        <div class="minui-frame-header">MIDI Control</div>
-        <iframe src="midicontrol.html"></iframe>
-      </div>
-
     </div>
   </div>
 
 <script>
-/* =========================================================
-   DARK MODE TOGGLE
-========================================================= */
+/* DARK MODE TOGGLE */
 (() => {
   const btn = document.getElementById('darkModeToggle');
   if (!btn) return;
+
+  document.documentElement.classList.remove('dark-mode');
+  btn.textContent = 'dark';
 
   btn.addEventListener('click', () => {
     const isDark = document.documentElement.classList.toggle('dark-mode');
@@ -188,14 +269,101 @@
 </script>
 
 <script>
-/* =========================================================
-   IFRAME AUTO-HEIGHT + ROW EQUALIZATION (UNCHANGED)
-========================================================= */
+(() => {
+  const MODULES = [
+    { id: "cadence",  label: "Cadence",  src: "Cadence.html" },
+    { id: "rhythm",   label: "Rhythm",   src: "Rhythm.html" },
+    { id: "harmony",  label: "Harmony",  src: "Harmony.html" },
+    { id: "bassline", label: "Bassline", src: "Bassline.html" },
+    { id: "shaker",   label: "Shaker",   src: "Shaker.html" },
+    { id: "ride",     label: "Ride",     src: "Ride.html" },
+    { id: "midictrl", label: "MIDI Control", src: "midicontrol.html" },
+  ];
+
+  const gridView = document.getElementById("gridView");
+  const singleView = document.getElementById("singleView");
+  const tabsEl = document.getElementById("moduleTabs");
+  const singleIframe = document.getElementById("singleIframe");
+  const singleHeader = document.getElementById("singleHeader");
+  const btn = document.getElementById("viewModeToggle");
+
+  if (!gridView || !singleView || !tabsEl || !singleIframe || !singleHeader || !btn) return;
+
+  const ICON_GRID = `
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+      <rect x="2" y="2" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <rect x="11" y="2" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <rect x="2" y="11" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <rect x="11" y="11" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2"/>
+    </svg>
+  `;
+
+  const ICON_SINGLE = `
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+      <rect x="2" y="2" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"/>
+      <line x1="7" y1="2" x2="7" y2="16" stroke="currentColor" stroke-width="2"/>
+      <line x1="11" y1="2" x2="11" y2="16" stroke="currentColor" stroke-width="2"/>
+    </svg>
+  `;
+
+  function setViewMode(mode) {
+    const isSingle = mode === "single";
+    gridView.hidden = isSingle;
+    singleView.hidden = !isSingle;
+    btn.innerHTML = isSingle ? ICON_GRID : ICON_SINGLE; // icon represents the other view
+    localStorage.setItem("rr_view_mode", isSingle ? "single" : "grid");
+  }
+
+  function setActiveModule(moduleId) {
+    const m = MODULES.find(x => x.id === moduleId) || MODULES[0];
+
+    tabsEl.querySelectorAll(".rr-tab").forEach(b => {
+      b.setAttribute("aria-selected", b.dataset.moduleId === m.id ? "true" : "false");
+    });
+
+    singleHeader.textContent = m.label;
+    if (singleIframe.getAttribute("src") !== m.src) {
+      singleIframe.setAttribute("src", m.src);
+    }
+
+    localStorage.setItem("rr_active_module", m.id);
+  }
+
+  function buildTabs() {
+    tabsEl.innerHTML = "";
+    MODULES.forEach(m => {
+      const b = document.createElement("button");
+      b.className = "rr-tab";
+      b.type = "button";
+      b.textContent = m.label;
+      b.dataset.moduleId = m.id;
+      b.setAttribute("aria-selected", "false");
+      b.addEventListener("click", () => setActiveModule(m.id));
+      tabsEl.appendChild(b);
+    });
+  }
+
+  buildTabs();
+
+  const initialMode = localStorage.getItem("rr_view_mode") || "grid";
+  setViewMode(initialMode);
+
+  const initialModule = localStorage.getItem("rr_active_module") || MODULES[0].id;
+  setActiveModule(initialModule);
+
+  btn.addEventListener("click", () => {
+    const current = localStorage.getItem("rr_view_mode") || "grid";
+    setViewMode(current === "grid" ? "single" : "grid");
+  });
+})();
+</script>
+
+<script>
 (() => {
   const EXTRA_BOTTOM_PX = 5;
-  const MAX_IFRAME_HEIGHT = 370;
+  const MAX_IFRAME_HEIGHT = 520;
 
-  const iframes = () => Array.from(document.querySelectorAll('iframe'));
+  const iframes = () => Array.from(document.querySelectorAll('#gridView iframe'));
   const naturalHeights = new WeakMap();
   let rafPending = false;
 
