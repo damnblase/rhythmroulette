@@ -110,20 +110,25 @@
     </div>
 
     <div class="row">
-      <label for="pitchVar">Pitch Variation</label>
-      <input id="pitchVar" type="range" min="0" max="100" value="50" />
-      <span class="pill"><span id="pitchVarVal" class="mono">50</span>%</span>
+  <label for="chordTones">Chord Tones</label>
+  <input id="chordTones" type="range" min="1" max="6" step="1" value="3" />
+  <span class="pill">Lvl <span id="chordTonesVal" class="mono">3</span></span>
 
-      <label for="octJump">Octave Jump</label>
-      <input id="octJump" type="range" min="0" max="100" value="0" />
-      <span class="pill"><span id="octJumpVal" class="mono">0</span>%</span>
+  <label for="density">Density</label>
+  <input id="density" type="range" min="0" max="100" value="50" />
+  <span class="pill"><span id="densityVal" class="mono">6</span> hits</span>
 
-      <label for="legato">Legato</label>
-      <input id="legato" type="range" min="0" max="100" value="70" />
-      <span class="pill"><span id="legatoVal" class="mono">70</span>%</span>
-    </div>
+  <label for="octJump">Octave Jump</label>
+  <input id="octJump" type="range" min="0" max="100" value="0" />
+  <span class="pill"><span id="octJumpVal" class="mono">0</span>%</span>
 
-    <div class="row small">
+  <label for="legato">Legato</label>
+  <input id="legato" type="range" min="0" max="100" value="70" />
+  <span class="pill"><span id="legatoVal" class="mono">70</span>%</span>
+</div>
+
+<div class="row small">
+
       <span class="pill">Key <span id="keyOut" class="mono">—</span></span>
       <span class="pill">Chord <span id="chordOut" class="mono">[]</span></span>
       <span class="pill">Root <span id="rootOut" class="mono">—</span></span>
@@ -144,9 +149,9 @@
   const CHORD_CH = 0;          // 0-based -> Channel 1
   const ROOT_CH  = 1;          // 0-based -> Channel 2
 
-  // Pattern density constraints
-  const MIN_HIT_RATIO = 0.25;  // change to 0.20 if you prefer
-  const MAX_HIT_RATIO = 0.50;
+  // Pattern density constraints (controlled via Density slider)
+  const MIN_HITS = 2;
+  const MAX_HITS = 10;
 
   // Bass register
   const BASS_LO = 36;          // C2
@@ -162,6 +167,9 @@
 
   // Chord attack debounce
   const CHORD_ATTACK_DEBOUNCE_MS = 20;
+
+  // Constant micro-delay before any bass note-on (lets chord updates commit)
+  const NOTE_ON_DELAY_MS = 10;
 
   // =========================================================
   // DOM
@@ -182,10 +190,12 @@
     bpmOut: $('#bpmOut'),
     subOut: $('#subOut'),
 
-    pitchVar: $('#pitchVar'),
+    chordTones: $('#chordTones'),
+    density: $('#density'),
     octJump: $('#octJump'),
     legato: $('#legato'),
-    pitchVarVal: $('#pitchVarVal'),
+    chordTonesVal: $('#chordTonesVal'),
+    densityVal: $('#densityVal'),
     octJumpVal: $('#octJumpVal'),
     legatoVal: $('#legatoVal'),
 
@@ -207,7 +217,8 @@
     subdiv: SUBDIV_FALLBACK,
 
     // controls
-    pitchVariation: 50,
+    chordTonesLevel: 3,   // 1..6
+    density: 50,          // 0..100 -> [2..10] hits
     octaveJump: 0,
     legato: 70,
 
@@ -244,6 +255,12 @@
     tickRequests: new Map(),   // Map<int, {priority:number, fn:Function}>
     emittedTick: -1,           // last tick where a note was emitted
     emittedPriority: 0,        // priority of the note emitted on emittedTick
+
+    // global gate: enforce at least 1 empty tick between any note-ons (mod LOOP_TICKS)
+    lastNoteOnTick: null,      // last tick index (0..127) where a note-on actually happened
+
+    // pending delayed note-ons (for NOTE_ON_DELAY_MS scheduling)
+    pendingNoteOnTimers: new Set(),
   };
 
   function makeEmptyPattern(len){
@@ -436,7 +453,7 @@
     state.lastChordAttackMs = now;
 
     const globalTick = (state.lastTickCount >= 0) ? state.lastTickCount : 0;
-    requestBassNote(globalTick, 3, () => triggerBassEventNow(globalTick, null, 'chordChange'));
+    requestBassNote(globalTick, 3, () => scheduleBassEventDelayed(globalTick, null, 'chordChange'));
     // Emit immediately (and override anything already emitted on this tick).
     flushBassRequestForTick(globalTick, true);
     el.debugOut.textContent = `attack @${globalTick}`;
@@ -637,7 +654,7 @@
     const p = (state.pattern.len > 0) ? (t % state.pattern.len) : 0;
     const step = state.pattern.steps[p];
     if (step && step.on) {
-      requestBassNote(t, 2, () => triggerBassEventNow(t, p, 'pattern'));
+      requestBassNote(t, 2, () => scheduleBassEventDelayed(t, p, 'pattern'));
     }
 
     // 3) Emit at most one note for this tick (strict mono + hard de-dupe)
@@ -691,39 +708,39 @@
     return weights.length - 1;
   }
 
-  function randomizePattern(forceLen=null) {
-    const lengths = [8, 16, 32];
-    const len = (forceLen != null && lengths.includes(forceLen|0)) ? (forceLen|0) : choice(lengths);
+  function randomizePattern(forceLen=null, opts={}) {
+  const lengths = [8, 16, 32];
+  const len = (forceLen != null && lengths.includes(forceLen|0)) ? (forceLen|0) : choice(lengths);
 
-    // Keep the dropdown in sync with the active pattern length
-    if (el.patternLen) el.patternLen.value = String(len);
+  // Keep the dropdown in sync with the active pattern length (unless explicitly told not to)
+  const keepDropdown = (opts && typeof opts === 'object' && opts.keepDropdown) ? true : false;
+  if (el.patternLen && !keepDropdown) el.patternLen.value = String(len);
 
-    const minHits = Math.ceil(MIN_HIT_RATIO * len);
-    const maxHits = Math.floor(MAX_HIT_RATIO * len);
-    const hitCount = randint(minHits, Math.max(minHits, maxHits));
+  // Density controls exact hit count
+  const hitCount = clamp(densityToHits(state.density), MIN_HITS, MAX_HITS);
 
-    const weights = buildWeights(len);
+  const weights = buildWeights(len);
 
-    const picked = new Set();
-    let guard = 0;
-    while (picked.size < hitCount && guard++ < 5000) {
-      const idx = weightedPickIndex(weights);
-      picked.add(idx);
-    }
-
-    const steps = new Array(len).fill(null);
-    for (const p of picked) {
-      steps[p] = { on:true, rA: Math.random(), rB: Math.random() };
-    }
-
-    state.pattern = { len, steps, seed: ((Math.random()*0x7fffffff)|0) ^ (Date.now()|0) };
-    state.scheduled.clear(); // reset octave-jump queue on new pattern
-    state.lastBassNote = null;
-
-    el.lenOut.textContent = String(len);
-    el.hitsOut.textContent = String(picked.size);
-    el.debugOut.textContent = `pattern len=${len} hits=${picked.size}`;
+  const picked = new Set();
+  let guard = 0;
+  while (picked.size < hitCount && guard++ < 5000) {
+    const idx = weightedPickIndex(weights);
+    picked.add(idx);
   }
+
+  const steps = new Array(len).fill(null);
+  for (const p of picked) {
+    steps[p] = { on:true, rA: Math.random(), rB: Math.random() };
+  }
+
+  state.pattern = { len, steps, seed: ((Math.random()*0x7fffffff)|0) ^ (Date.now()|0) };
+  state.scheduled.clear(); // reset octave-jump queue on new pattern
+  state.lastBassNote = null;
+
+  el.lenOut.textContent = String(len);
+  el.hitsOut.textContent = String(picked.size);
+  el.debugOut.textContent = `pattern len=${len} hits=${picked.size}`;
+}
 
   // =========================================================
   // Harmony helpers
@@ -750,82 +767,105 @@
   }
 
   // =========================================================
-  // Pitch selection (Pitch Variation)
-  // =========================================================
-  function smoothstep01(t) {
-    const x = clamp(t, 0, 1);
-    return x * x * (3 - 2 * x);
-  }
+// Pitch selection (Chord Tones, 5-step)
+// =========================================================
+function pcListFromSet(set) {
+  return Array.from(set || []).map(x=>x|0).sort((a,b)=>a-b);
+}
 
-  function pcListFromSet(set) {
-    return Array.from(set || []).map(x=>x|0).sort((a,b)=>a-b);
-  }
+function pickFromList(list, r=Math.random()) {
+  if (!list || !list.length) return null;
+  const rr = clamp(r, 0, 0.999999);
+  const idx = Math.min(list.length - 1, Math.max(0, Math.floor(rr * list.length)));
+  return list[idx]|0;
+}
 
-  function pickFromList(list, r) {
-    if (!list || !list.length) return null;
-    const idx = Math.min(list.length - 1, Math.max(0, Math.floor(clamp(r,0,0.999999) * list.length)));
-    return list[idx]|0;
-  }
-
-  function choosePitchClass(source, stepRandA=0.5, stepRandB=0.5) {
-    const chord = state.currentChordNotes || [];
-    const rootAbs = getRootAbs();
-    if (!chord.length || rootAbs < 0) return null;
-
-    const rootPc = ((rootAbs|0)%12+12)%12;
-    const chordPcs = chordPCSet();
-    const keyPcs = getEffectiveKeyPCSet(chordPcs);
-    if (!keyPcs || !keyPcs.size) return null;
-
-    // Pools (PC sets)
-    const chordInKey = new Set();
-    for (const pc of chordPcs) if (keyPcs.has(pc)) chordInKey.add(pc);
-    if (!chordInKey.size) chordInKey.add(rootPc); // ensure root exists
-
-    const chordOther = new Set();
-    for (const pc of chordInKey) if (pc !== rootPc) chordOther.add(pc);
-
-    const scaleOnly = new Set();
-    for (const pc of keyPcs) if (!chordPcs.has(pc)) scaleOnly.add(pc);
-
-    const v = clamp((state.pitchVariation|0) / 100, 0, 1);
-    const tChord = smoothstep01(clamp(v / 0.5, 0, 1));          // 0..1 over 0..50%
-    const tScale = smoothstep01(clamp((v - 0.5) / 0.5, 0, 1));  // 0..1 over 50..100%
-
-    // Chord-change attack: chord tones only (prefer root strongly)
-    if (source === 'chordChange') {
-      const chordChoices = pcListFromSet(chordInKey);
-      // strong root preference: 75% root, 25% other chord tones (if any)
-      if (Math.random() < 0.75 || chordChoices.length === 1) return rootPc;
-      const others = chordChoices.filter(pc => pc !== rootPc);
-      return pickFromList(others.length ? others : chordChoices, stepRandB);
+function chordDegreePcsAvailable(rootPc, chordPcs) {
+  // Returns a map of degreeName -> pc if present in chord pcs.
+  const deg = {};
+  const has = (intervals) => {
+    for (const iv of intervals) {
+      const pc = (rootPc + iv) % 12;
+      if (chordPcs.has(pc)) return pc;
     }
+    return null;
+  };
 
-    // At 0%: root only
-    if (v <= 0) return rootPc;
+  // Root should always be available via explicit root or lowest chord note
+  if (chordPcs.has(rootPc)) deg.root = rootPc;
+  else deg.root = rootPc; // root is derived from incoming root/lowest note, so treat as available
 
-    // Category weights
-    let wRoot = 1.0;
-    let wChordOther = chordOther.size ? (1.0 * tChord) : 0.0;
-    let wScaleOnly  = scaleOnly.size  ? (1.0 * tScale) : 0.0;
+  // 3rd: minor (3) or major (4)
+  const thirdPc = has([3,4]);
+  if (thirdPc != null) deg.third = thirdPc;
 
-    // Normalize and pick
-    const sum = Math.max(1e-9, wRoot + wChordOther + wScaleOnly);
-    const x = clamp(stepRandA, 0, 0.999999) * sum;
+  // 5th: diminished (6) or perfect (7)
+  const fifthPc = has([6,7]);
+  if (fifthPc != null) deg.fifth = fifthPc;
 
-    if (x < wRoot || (!wChordOther && !wScaleOnly)) {
-      return rootPc;
-    } else if (x < (wRoot + wChordOther) || !wScaleOnly) {
-      const list = pcListFromSet(chordOther);
-      return pickFromList(list, stepRandB) ?? rootPc;
-    } else {
-      const list = pcListFromSet(scaleOnly);
-      const pc = pickFromList(list, stepRandB);
-      return (pc == null) ? rootPc : pc;
-    }
+  // 7th: minor (10) or major (11)
+  const seventhPc = has([10,11]);
+  if (seventhPc != null) deg.seventh = seventhPc;
+
+  // 9th: (root + 2) (as a pitch class), only if present
+  const ninthPc = has([2]);
+  if (ninthPc != null) deg.ninth = ninthPc;
+
+  return deg;
+}
+
+function allowedChordTonePool(level, source) {
+  const chord = state.currentChordNotes || [];
+  const rootAbs = getRootAbs();
+  if (!chord.length || rootAbs < 0) return null;
+
+  const rootPc = ((rootAbs|0)%12+12)%12;
+  const chordPcs = chordPCSet();
+  const deg = chordDegreePcsAvailable(rootPc, chordPcs);
+
+  // Level 6: allow any pitch class from the current key/scale (if available)
+  if ((level|0) === 6 && state.hasKey && state.currentKeyPCSet && state.currentKeyPCSet.size) {
+    return { rootPc, pool: new Set(state.currentKeyPCSet) };
   }
 
-  function bestMidiNoteForPc(targetPc, referenceMidi) {
+  // Levels:
+  // 1: root
+  // 2: root + 3rd
+  // 3: root + 3rd + 5th
+  // 4: root + 3rd + 5th + 7th
+  // 5: root + 3rd + 5th + 7th + 9th
+  // 6: key/scale (all pitch classes in current key)
+  const pool = new Set();
+  pool.add(deg.root);
+
+  if (level >= 2 && deg.third != null) pool.add(deg.third);
+  if (level >= 3 && deg.fifth != null) pool.add(deg.fifth);
+  if (level >= 4 && deg.seventh != null) pool.add(deg.seventh);
+  if (level >= 5 && deg.ninth != null) pool.add(deg.ninth);
+
+  // For chord-change "attack", still follow pool rules: Level 1 = root only; otherwise random from pool.
+  // (No extra biasing unless the pool is empty.)
+  if (!pool.size) pool.add(rootPc);
+
+  return { rootPc, pool };
+}
+
+function chooseChordTonePc(source, stepRandA=0.5, stepRandB=0.5) {
+  const out = allowedChordTonePool(state.chordTonesLevel|0, source);
+  if (!out) return null;
+
+  const list = pcListFromSet(out.pool);
+  if (!list.length) return out.rootPc;
+
+  // Level 1: root only (even if other tones present)
+  if ((state.chordTonesLevel|0) <= 1) return out.rootPc;
+
+  // Otherwise, random from allowed pool
+  const r = (source === 'chordChange') ? stepRandB : stepRandA;
+  return pickFromList(list, r) ?? out.rootPc;
+}
+
+function bestMidiNoteForPc(targetPc, referenceMidi) {
     // Build candidates of targetPc within register [BASS_LO..BASS_HI] and choose closest to referenceMidi
     const pcs = ((targetPc|0)%12+12)%12;
     const candidates = [];
@@ -846,41 +886,60 @@
   // =========================================================
   // Legato (duration)
   // =========================================================
-  function probabilityLong() {
-    const L = clamp((state.legato|0) / 100, 0, 1);
-    return 0.25 + 0.75 * L; // 0.25 at min, 1.0 at max
-  }
 
-  function ticksUntilNextPatternHit(fromGlobalTick) {
-    const len = state.pattern.len|0;
-    if (!len) return 4;
-    const fromPos = fromGlobalTick % len;
-    for (let i=1; i<=len; i++) {
-      const p = (fromPos + i) % len;
-      if (state.pattern.steps[p] && state.pattern.steps[p].on) return i;
-    }
-    return len;
-  }
+  function ticksUntilNextEvent(fromGlobalTick) {
+  // "Next actual note-on event" means: next pattern hit OR next scheduled octave-jump event.
+  // (Chord-change attacks are not predictable ahead of time, so they are not included here.)
+  const from = (fromGlobalTick|0) % LOOP_TICKS;
+  const patLen = state.pattern.len|0;
 
-  function computeDurationTicks(source, fromGlobalTick) {
-    // Octave jump repeat is always short
-    if (source === 'octJump') return OCT_JUMP_DUR_TICKS;
+  for (let i=1; i<=LOOP_TICKS; i++) {
+    const tt = (from + i) % LOOP_TICKS;
 
-    const lenToNext = ticksUntilNextPatternHit(fromGlobalTick);
-    const L = clamp((state.legato|0) / 100, 0, 1);
-    const pLong = probabilityLong();
+    // Any scheduled octave-jump event at tt counts as a potential next note-on
+    const sched = state.scheduled.get(tt);
+    if (sched && sched.length) return i;
 
-    const isLong = (Math.random() < pLong) || (L >= 0.999);
-    if (isLong) {
-      const frac = (0.70 + (0.25 * L)); // 0.70..0.95
-      const dur = Math.round(clamp(lenToNext * frac, 1, lenToNext));
-      return Math.max(1, dur|0);
-    } else {
-      const opts = [1,1,2,2,3];
-      const dur = opts[(Math.random()*opts.length)|0];
-      return clamp(dur|0, 1, Math.max(1, lenToNext));
+    // Any pattern hit at tt counts
+    if (patLen > 0) {
+      const p = tt % patLen;
+      const step = state.pattern.steps[p];
+      if (step && step.on) return i;
     }
   }
+  return 4;
+}
+
+function computeDurationTicks(source, fromGlobalTick) {
+  // Octave jump repeat can remain short
+  if (source === 'octJump') return OCT_JUMP_DUR_TICKS;
+
+  const toNext = Math.max(1, ticksUntilNextEvent(fromGlobalTick));
+  const L = clamp((state.legato|0) / 100, 0, 1);
+
+  // At maximum: hold until the next actual note-on event (touching, no overlap due to mono + epsilon)
+  if (L >= 0.999) return toNext;
+
+  // At minimum: mostly short, with occasional longer notes "here and there"
+  // Long-note probability interpolates linearly from low to higher as legato increases.
+  const pLong = 0.06 + 0.70 * (L * L); // ~6% at min, ~76% near max (but max handled above)
+
+  const isLong = (Math.random() < pLong);
+
+  if (isLong) {
+    // Long note: a fraction of the time until the next event, without overlapping
+    const fracMin = 0.55;
+    const fracMax = 0.95;
+    const frac = fracMin + (fracMax - fracMin) * Math.random();
+    const dur = Math.round(clamp(toNext * frac, 1, toNext));
+    return Math.max(1, dur|0);
+  }
+
+  // Short note: typically 1–2 ticks, slightly longer as legato increases
+  const shortMax = (L < 0.35) ? 1 : (L < 0.75) ? 2 : 3;
+  const dur = 1 + ((Math.random() * shortMax) | 0);
+  return clamp(dur|0, 1, toNext);
+}
 
   function durationMsFromTicks(durTicks) {
     const ms = tickMs() * Math.max(1, durTicks|0);
@@ -910,7 +969,7 @@
 
     for (const ev of arr) {
       if (ev.type === 'octJump') {
-        requestBassNote(globalTick, 1, () => triggerSpecificNoteNow(globalTick, ev.note|0, 'octJump'));
+        requestBassNote(globalTick, 1, () => scheduleSpecificNoteDelayed(globalTick, ev.note|0, 'octJump'));
       }
     }
   }
@@ -935,6 +994,17 @@
     const t = (globalTick|0) % LOOP_TICKS;
     const req = state.tickRequests.get(t);
     if (!req) return;
+
+    // Mandatory 1-tick gap: if any note-on happened on tick (t-1), skip note-ons on tick t.
+    // Applies globally to all sources and respects the 128-tick loop wrap.
+    if (state.lastNoteOnTick != null) {
+      const forbidden = ((state.lastNoteOnTick|0) + 1) % LOOP_TICKS;
+      if (t === forbidden) {
+        // Skip (drop) this tick's request(s); do not delay or shift.
+        state.tickRequests.delete(t);
+        return;
+      }
+    }
 
     // If not forcing, don't emit twice for the same tick.
     if (!force && state.emittedTick === t) return;
@@ -995,54 +1065,114 @@
     }, offMs);
   }
 
-  function triggerSpecificNoteNow(globalTick, note, source) {
+  
+  function cancelPendingDelayedNoteOns() {
+    if (!state.pendingNoteOnTimers || !state.pendingNoteOnTimers.size) return;
+    for (const id of Array.from(state.pendingNoteOnTimers)) {
+      try { clearTimeout(id); } catch {}
+    }
+    state.pendingNoteOnTimers.clear();
+  }
+
+  function scheduleDelayedNoteOn(fn) {
+    // NOTE: must be cancelled on panic/transport stop so no notes fire after stop.
+    const delay = Math.max(0, NOTE_ON_DELAY_MS|0);
+    if (delay <= 0) { fn(); return; }
+
+    const id = setTimeout(() => {
+      try { state.pendingNoteOnTimers.delete(id); } catch {}
+      fn();
+    }, delay);
+
+    state.pendingNoteOnTimers.add(id);
+  }
+
+  // Emit a specific MIDI note (already chosen), with constant NOTE_ON_DELAY_MS scheduling.
+  function scheduleSpecificNoteDelayed(globalTick, note, source) {
     if (!MIDI.out) return;
 
-    const durTicks = computeDurationTicks(source, globalTick);
-    const durMs = durationMsFromTicks(durTicks);
+    const t = (globalTick|0) % LOOP_TICKS;
 
-    // Octave jump should be short and light
-    const vel = (source === 'octJump') ? 70 : 96;
+    // Keep the existing gating semantics: treat this tick as having a note-on even though
+    // the actual Note On is delayed by NOTE_ON_DELAY_MS.
+    state.lastNoteOnTick = t;
 
-    noteOnMono(note|0, vel, durMs);
-    state.lastBassNote = note|0;
+    scheduleDelayedNoteOn(() => {
+      const durTicks = computeDurationTicks(source, globalTick);
+      const durMs = durationMsFromTicks(durTicks);
 
-    el.debugOut.textContent = `${source} note=${note} dur=${durTicks}t`;
+      // Octave jump should be short and light
+      const vel = (source === 'octJump') ? 70 : 96;
+
+      noteOnMono(note|0, vel, durMs);
+      state.lastBassNote = note|0;
+
+      el.debugOut.textContent = `${source} note=${note} dur=${durTicks}t`;
+    });
   }
 
-  function triggerBassEventNow(globalTick, patternPos, source) {
-    const chord = state.currentChordNotes || [];
-    if (!chord.length) return;
+  // Choose pitch INSIDE the delayed callback, so it always reflects the latest committed chord state.
+  function scheduleBassEventDelayed(globalTick, patternPos, source) {
+    // Keep original early-outs: if there is no chord right now, don't schedule anything.
+    if (!MIDI.out) return;
+    const chordNow = state.currentChordNotes || [];
+    if (!chordNow.length) return;
 
-    const chordPcs = chordPCSet();
-    const keyPcs = getEffectiveKeyPCSet(chordPcs);
-    if (!keyPcs || !keyPcs.size) return;
+    const chordPcsNow = chordPCSet();
+    const keyPcsNow = getEffectiveKeyPCSet(chordPcsNow);
+    if (!keyPcsNow || !keyPcsNow.size) return;
 
-    const rootAbs = getRootAbs();
-    if (rootAbs < 0) return;
+    const rootAbsNow = getRootAbs();
+    if (rootAbsNow < 0) return;
 
-    const step = (patternPos != null && state.pattern.steps[patternPos]) ? state.pattern.steps[patternPos] : null;
-    const rA = step ? (step.rA ?? Math.random()) : Math.random();
-    const rB = step ? (step.rB ?? Math.random()) : Math.random();
+    const t = (globalTick|0) % LOOP_TICKS;
 
-    const chosenPc = choosePitchClass(source, rA, rB);
-    if (chosenPc == null) return;
+    // Preserve 1-tick-gap semantics exactly (see comment in scheduleSpecificNoteDelayed).
+    state.lastNoteOnTick = t;
 
-    // Reference for register choice
-    const ref = (state.lastBassNote != null)
-      ? state.lastBassNote
-      : bestMidiNoteForPc(((rootAbs|0)%12+12)%12, clamp(rootAbs, BASS_LO, BASS_HI));
+    scheduleDelayedNoteOn(() => {
+      const chord = state.currentChordNotes || [];
+      if (!chord.length) return;
 
-    const note = bestMidiNoteForPc(chosenPc, ref);
+      const chordPcs = chordPCSet();
+      const keyPcs = getEffectiveKeyPCSet(chordPcs);
+      if (!keyPcs || !keyPcs.size) return;
 
-    // Fire the main note (strict mono)
-    triggerSpecificNoteNow(globalTick, note, source);
+      const rootAbs = getRootAbs();
+      if (rootAbs < 0) return;
 
-    // Schedule octave jump repeat (only for main notes, not for octJump events)
-    if (source !== 'octJump') scheduleOctaveJump(globalTick, note);
+      const step = (patternPos != null && state.pattern.steps[patternPos]) ? state.pattern.steps[patternPos] : null;
+      const rA = step ? (step.rA ?? Math.random()) : Math.random();
+      const rB = step ? (step.rB ?? Math.random()) : Math.random();
+
+      const chosenPc = chooseChordTonePc(source, rA, rB);
+      if (chosenPc == null) return;
+
+      // Reference for register choice
+      const ref = (state.lastBassNote != null)
+        ? state.lastBassNote
+        : bestMidiNoteForPc(((rootAbs|0)%12+12)%12, clamp(rootAbs, BASS_LO, BASS_HI));
+
+      const note = bestMidiNoteForPc(chosenPc, ref);
+
+      // Emit the main note (strict mono) with this delayed timing.
+      // (We are already inside the delay; do not double-delay.)
+      const durTicks = computeDurationTicks(source, globalTick);
+      const durMs = durationMsFromTicks(durTicks);
+      const vel = (source === 'octJump') ? 70 : 96;
+
+      noteOnMono(note|0, vel, durMs);
+      state.lastBassNote = note|0;
+
+      el.debugOut.textContent = `${source} note=${note} dur=${durTicks}t`;
+
+      // Schedule octave jump repeat (only for main notes, not for octJump events)
+      if (source !== 'octJump') scheduleOctaveJump(globalTick, note);
+    });
   }
 
-  // =========================================================
+
+// =========================================================
   // UI Render
   // =========================================================
   function renderChordUI() {
@@ -1051,15 +1181,30 @@
     el.rootOut.textContent = (root >= 0) ? String(root) : '—';
   }
 
-  function syncSliders() {
-    state.pitchVariation = clamp(parseInt(el.pitchVar.value,10)||0, 0, 100);
-    state.octaveJump = clamp(parseInt(el.octJump.value,10)||0, 0, 100);
-    state.legato = clamp(parseInt(el.legato.value,10)||0, 0, 100);
+  function densityToHits(density01or100) {
+  const d = clamp((density01or100|0) / 100, 0, 1);
+  // Deterministic mapping to integer hit count in [MIN_HITS..MAX_HITS]
+  return (MIN_HITS + Math.round(d * (MAX_HITS - MIN_HITS)))|0;
+}
 
-    el.pitchVarVal.textContent = String(state.pitchVariation|0);
-    el.octJumpVal.textContent = String(state.octaveJump|0);
-    el.legatoVal.textContent = String(state.legato|0);
+function syncSliders({ regeneratePattern=false } = {}) {
+  state.chordTonesLevel = clamp(parseInt(el.chordTones.value,10)||1, 1, 6);
+  state.density = clamp(parseInt(el.density.value,10)||0, 0, 100);
+  state.octaveJump = clamp(parseInt(el.octJump.value,10)||0, 0, 100);
+  state.legato = clamp(parseInt(el.legato.value,10)||0, 0, 100);
+
+  el.chordTonesVal.textContent = String(state.chordTonesLevel|0);
+  el.densityVal.textContent = String(densityToHits(state.density));
+  el.octJumpVal.textContent = String(state.octaveJump|0);
+  el.legatoVal.textContent = String(state.legato|0);
+
+  if (regeneratePattern) {
+    // Keep current pattern length, regenerate rhythm immediately to reflect density change
+    const len = (state.pattern && state.pattern.len) ? (state.pattern.len|0) : parseInt(el.patternLen.value,10) || 16;
+    randomizePattern(len, { keepDropdown:true });
   }
+}
+
 
   // =========================================================
   // BroadcastChannel-triggered randomization (randomize_channel)
@@ -1075,13 +1220,15 @@
         if (el.randBtn) el.randBtn.click();
 
         // 2) Randomize sliders exactly like user input (value + input event)
-        const sliders = [el.pitchVar, el.octJump, el.legato];
-        for (const s of sliders) {
-          if (!s) continue;
-          const v = randint(0, 100);
-          s.value = String(v);
-          s.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+const sliders = [el.chordTones, el.density, el.octJump, el.legato];
+for (const s of sliders) {
+  if (!s) continue;
+  let v = 0;
+  if (s === el.chordTones) v = randint(1, 6);
+  else v = randint(0, 100);
+  s.value = String(v);
+  s.dispatchEvent(new Event('input', { bubbles: true }));
+}
       }
     };
   }
@@ -1090,6 +1237,9 @@
   // Panic / safety
   // =========================================================
   function panic(reason='panic') {
+    // cancel any delayed note-ons so nothing fires after stop
+    try { cancelPendingDelayedNoteOns(); } catch {}
+
     // clear current mono note
     try { stopCurrentBassNote(); } catch {}
     try { MIDI.allNotesOffChannel(BASS_MIDI_CH); } catch {}
@@ -1116,7 +1266,10 @@
   el.midiIn.addEventListener('change', () => MIDI.selectInById(el.midiIn.value));
   el.midiOut.addEventListener('change', () => MIDI.selectOutById(el.midiOut.value));
   el.panicBtn.addEventListener('click', () => panic('button'));
-  el.randBtn.addEventListener('click', () => randomizePattern());
+  el.randBtn.addEventListener('click', () => {
+    const len = (state.pattern && state.pattern.len) ? (state.pattern.len|0) : (parseInt(el.patternLen.value,10) || 16);
+    randomizePattern(len, { keepDropdown:true });
+  });
 
   el.patternLen.addEventListener('change', () => {
     const len = parseInt(el.patternLen.value, 10);
@@ -1124,7 +1277,8 @@
     randomizePattern(len);
   });
 
-  el.pitchVar.addEventListener('input', () => syncSliders());
+  el.chordTones.addEventListener('input', () => syncSliders());
+  el.density.addEventListener('input', () => syncSliders({ regeneratePattern:true }));
   el.octJump.addEventListener('input', () => syncSliders());
   el.legato.addEventListener('input', () => syncSliders());
 
@@ -1140,7 +1294,7 @@
 
     // start with a pattern immediately
     if (el.patternLen) el.patternLen.value = '16';
-    randomizePattern(16);
+    randomizePattern(16, { keepDropdown:true });
     renderKeyUI();
     renderChordUI();
   }
