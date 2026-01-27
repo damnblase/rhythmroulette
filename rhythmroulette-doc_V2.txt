@@ -21,4 +21,3 @@ Pour la page web :
 
 Channels pour instruments :
 Laisser le bus des automations à part (midi control) par ex Bus 3
-
