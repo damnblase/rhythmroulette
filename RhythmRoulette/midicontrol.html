@@ -283,6 +283,7 @@ button{ transition: none !important; }
 }
 
 </style>
+<script src="./rr-ui.js" defer></script>
 </head>
 <body>
   <div class="minui-wrap">
@@ -874,7 +875,6 @@ button{ transition: none !important; }
         let lastVal = 0;
         slider.addEventListener("input", () => {
           lastVal = clamp(parseInt(slider.value, 10) || 0, 0, 127);
-          readout.textContent = String(lastVal);
           if (!pending) {
             pending = true;
             requestAnimationFrame(() => {
