@@ -4,80 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Bassline v2 — Node Pattern + Key-Safe Pitch (internal-ticker)</title>
-<style>
-  :root{
-    --ui-bg:#ffffff;
-    --ui-fg:#000000;
-    --ui-border:#000000;
-    --ui-radius:10px;
-    --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
-    --ui-font-size:14px;
-    --ui-line-height:1.25;
-    --ui-pad-y:10px;
-    --ui-pad-x:12px;
-    --ui-gap:10px;
-    --ui-page-pad:18px;
-    --ui-max-width:100%;
-  }
 
-  html, body{
-    margin:0;
-    height:100%;
-    background:var(--ui-bg);
-    color:var(--ui-fg);
-    font-family:var(--ui-font);
-    font-size:var(--ui-font-size);
-    line-height:var(--ui-line-height);
-  }
+<link rel="stylesheet" href="./rr-ui.css">
+<script src="./rr-ui.js" defer></script>
 
-  .wrap{
-    max-width:var(--ui-max-width);
-    padding:var(--ui-page-pad);
-    margin:0 auto;
-    display:grid;
-    gap:var(--ui-gap);
-  }
-
-  .row{
-    display:flex;
-    flex-wrap:wrap;
-    align-items:center;
-    gap:var(--ui-gap);
-    margin:0;
-  }
-
-  label{
-    display:inline-block;
-    color:var(--ui-fg);
-  }
-
-  select, button, input[type="number"]{
-    background:var(--ui-bg);
-    color:var(--ui-fg);
-    border:1px solid var(--ui-border);
-    border-radius:var(--ui-radius);
-    padding:var(--ui-pad-y) var(--ui-pad-x);
-    font:inherit;
-    line-height:inherit;
-    box-shadow:none;
-    appearance:auto;
-  }
-
-  input[type="range"]{ accent-color: var(--ui-fg); }
-  button{ cursor:pointer; user-select:none; }
-  button:disabled, select:disabled{ opacity:.45; cursor:not-allowed; }
-
-  .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
-  .pill{
-    display:inline-block;
-    padding:6px 10px;
-    border-radius:999px;
-    border:1px solid var(--ui-border);
-    font-size:12px;
-  }
-  .small{ font-size:12px; }
-  .spacer{ flex: 1 1 auto; min-width: 8px; }
-</style>
 </head>
 <body>
   <div class="wrap">
