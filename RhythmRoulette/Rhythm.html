@@ -18,6 +18,8 @@
       <div class="minui-row">
         <label for="midiOutputSelect">MIDI Output</label>
         <select id="midiOutputSelect"></select>
+        <label for="midiCh">Ch</label>
+        <select id="midiCh" aria-label="MIDI Channel"></select>
       </div>
 
       <div class="transport-controls">
@@ -271,10 +273,29 @@
     randomizeInstrumentPattern("Clap");
 
     /***** WEB MIDI OUTPUT *****/
+
+    function fillChannelSelect(sel, defaultCh1Based) {
+      sel.innerHTML = "";
+      for (let ch = 1; ch <= 16; ch++) {
+        const opt = document.createElement("option");
+        opt.value = String(ch);
+        opt.textContent = String(ch);
+        sel.appendChild(opt);
+      }
+      sel.value = String(defaultCh1Based);
+    }
+
+    function readChannel0(sel) {
+      const ch1 = parseInt(sel.value, 10) || 1;
+      const clamped = Math.max(1, Math.min(16, ch1));
+      return clamped - 1;
+    }
     let midiAccess = null;
     let midiOutput = null;
 
     const midiSelect = document.getElementById("midiOutputSelect");
+    const midiChSel = document.getElementById("midiCh");
+    fillChannelSelect(midiChSel, 10);
 
     if (navigator.requestMIDIAccess) {
       navigator.requestMIDIAccess().then(access => {
@@ -348,8 +369,9 @@
       console.log("MIDI outputs updated");
     }
 
-    function sendMidiNote(note, velocity, channel = 9, durationMs = 200, tsMs = performance.now()) {
+    function sendMidiNote(note, velocity, durationMs = 200, tsMs = performance.now()) {
       if (!midiOutput) return;
+      const channel = readChannel0(midiChSel);
       midiOutput.send([0x90 + channel, note, velocity], tsMs);
       midiOutput.send([0x80 + channel, note, 0], tsMs + durationMs);
     }
@@ -404,23 +426,23 @@
 
       if (shouldPlay('kick')) {
         const on = isA ? kickPattern[i] : kickPatternDup[i];
-        if (on === 1) sendMidiNote(36, 127, 9, 200, tsMs);
+        if (on === 1) sendMidiNote(36, 127, 200, tsMs);
       }
       if (shouldPlay('snare')) {
         const on = isA ? snarePattern[i] : snarePatternDup[i];
-        if (on === 1) sendMidiNote(38, 127, 9, 200, tsMs);
+        if (on === 1) sendMidiNote(38, 127, 200, tsMs);
       }
       if (shouldPlay('hiHat')) {
         const on = isA ? hiHatPattern[i] : hiHatPatternDup[i];
-        if (on === 1) sendMidiNote(42, 127, 9, 200, tsMs);
+        if (on === 1) sendMidiNote(42, 127, 200, tsMs);
       }
       if (shouldPlay('tom')) {
         const on = isA ? tomPattern[i] : tomPatternDup[i];
-        if (on === 1) sendMidiNote(50, 127, 9, 200, tsMs);
+        if (on === 1) sendMidiNote(50, 127, 200, tsMs);
       }
       if (shouldPlay('clap')) {
         const on = isA ? clapPattern[i] : clapPatternDup[i];
-        if (on === 1) sendMidiNote(39, 127, 9, 200, tsMs);
+        if (on === 1) sendMidiNote(39, 127, 200, tsMs);
       }
     };
 

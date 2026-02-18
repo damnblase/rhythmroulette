@@ -15,16 +15,13 @@
 
     <!-- MIDI Out -->
     <div class="row minui-row minui-keep-output">
-      <button id="midiEnableBtn">Enable MIDI</button>
       <label for="outputSel">MIDI Out</label>
       <select id="outputSel" disabled></select>
-      <span id="midiStatus" class="minui-hidden"></span>
-    </div>
 
-    <!-- Duplicate kept but hidden -->
-    <div class="row minui-row minui-scope">
-      <label for="outputSel">MIDI Out</label>
-      <select id="outputSel" disabled></select>
+      <label for="channelSel">Ch</label>
+      <select id="channelSel" disabled></select>
+
+      <span id="midiStatus" class="minui-hidden"></span>
     </div>
 
     <!-- REGENERATE -->
@@ -37,20 +34,18 @@
       <button id="panicBtn" class="minui-hidden">Panic</button>
     </div>
 
-    <div class="row minui-row minui-scope">
-      <button id="regenBtn">Randomize Pattern</button>
-    </div>
-
     <!-- NOTE DENSITY -->
     <div class="row minui-row minui-keep-density">
       <label for="density">Note Density</label>
       <input id="density" type="range" min="1" max="100" step="1" value="70" />
+      <span id="densityVal" class="minui-hidden">70%</span>
     </div>
 
     <!-- VELOCITY FLOOR -->
     <div class="row minui-row minui-keep-velfloor">
       <label for="velFloor">Velocity Floor</label>
       <input id="velFloor" type="range" min="27" max="127" step="1" value="45" />
+      <span id="velFloorVal" class="minui-hidden">45 → 127</span>
     </div>
 
     <div class="row minui-row minui-scope">
@@ -69,7 +64,7 @@
   const SHAKER_MIDI_CHANNEL_1_BASED = 6;
   const MIDI_CHANNEL_1_BASED = SHAKER_MIDI_CHANNEL_1_BASED + 1;
 
-  const MIDI_CH = MIDI_CHANNEL_1_BASED - 1;
+  let midiCh = MIDI_CHANNEL_1_BASED - 1;
   const GATE_MS = 45;
 
   let loopLength = 4;
@@ -87,8 +82,25 @@
   let beat1Residue = null;
 
   const $ = (s) => document.querySelector(s);
-  const midiEnableBtn = $('#midiEnableBtn');
+
+  function fillChannelSelect(sel, defaultCh1Based){
+    sel.innerHTML='';
+    for(let ch=1; ch<=16; ch++){
+      const opt=document.createElement('option');
+      opt.value=String(ch);
+      opt.textContent=String(ch);
+      sel.appendChild(opt);
+    }
+    sel.value=String(defaultCh1Based);
+  }
+  function readChannel0(sel){
+    const ch1=parseInt(sel.value,10)||1;
+    const clamped=Math.max(1,Math.min(16,ch1));
+    return clamped-1;
+  }
+
   const outputSel     = $('#outputSel');
+  const channelSel    = $('#channelSel');
   const midiStatus    = $('#midiStatus');
   const regenBtn      = $('#regenBtn');
   const panicBtn      = $('#panicBtn');
@@ -101,14 +113,28 @@
   let midiAccess = null;
   let midiOut = null;
 
+  fillChannelSelect(channelSel, MIDI_CHANNEL_1_BASED);
+  midiCh = readChannel0(channelSel);
+  channelSel.addEventListener("change", ()=>{ midiCh = readChannel0(channelSel); });
+
+  function setStatus(txt){
+    if(!midiStatus) return;
+    midiStatus.textContent = txt || '';
+  }
+
   async function enableMIDI(){
     try{
       midiAccess = await navigator.requestMIDIAccess({ sysex:false });
       midiAccess.onstatechange = updateOutputsSelect;
       updateOutputsSelect();
       outputSel.disabled = !midiOut;
+      channelSel.disabled = !midiOut;
+      setStatus(midiOut ? 'MIDI ready' : 'No MIDI outputs');
     }catch(e){
       console.error(e);
+      setStatus('MIDI permission denied');
+      outputSel.disabled = true;
+      channelSel.disabled = true;
     }
   }
 
@@ -123,27 +149,36 @@
       outputSel.appendChild(opt);
     });
     if(outs.length){
-      midiOut = outs[0];
-      outputSel.value = outs[0].id;
+      // Keep current selection if possible, else default to first
+      const currentId = midiOut?.id;
+      midiOut = outs.find(o => o.id === currentId) || outs[0];
+      outputSel.value = midiOut.id;
       outputSel.disabled = false;
+      channelSel.disabled = false;
+    }else{
+      midiOut = null;
+      outputSel.disabled = true;
+      channelSel.disabled = true;
     }
   }
 
   outputSel.addEventListener('change', ()=>{
     if(!midiAccess) return;
     midiOut = Array.from(midiAccess.outputs.values()).find(o=>o.id===outputSel.value) || null;
+    outputSel.disabled = !midiOut;
+    channelSel.disabled = !midiOut;
   });
 
   function sendNoteOn(n,v){
-    if(midiOut) midiOut.send([0x90+MIDI_CH, n&127, v&127]);
+    if(midiOut) midiOut.send([0x90+midiCh, n&127, v&127]);
   }
   function sendNoteOff(n){
-    if(midiOut) midiOut.send([0x80+MIDI_CH, n&127, 0]);
+    if(midiOut) midiOut.send([0x80+midiCh, n&127, 0]);
   }
   function allNotesOff(){
     if(midiOut){
-      midiOut.send([0xB0+MIDI_CH,123,0]);
-      midiOut.send([0x80+MIDI_CH,MIDI_NOTE,0]);
+      midiOut.send([0xB0+midiCh,123,0]);
+      midiOut.send([0x80+midiCh,MIDI_NOTE,0]);
     }
   }
 
@@ -214,7 +249,6 @@
         beat1Residue = 1;
       }else{
         // Fallback: pick a stable mapping using the first observed residue.
-        // This does not assume we're at beat 1 right now; it just chooses one of the two valid conventions.
         // Prefer 0-based if the residue is 0, otherwise default to 1-based.
         beat1Residue = ((tickNumber % 4) === 0) ? 0 : 1;
       }
@@ -266,18 +300,21 @@
     }
   };
 
-  midiEnableBtn.addEventListener('click', enableMIDI);
   regenBtn.addEventListener('click', regeneratePattern);
   panicBtn.addEventListener('click', allNotesOff);
 
-  density.addEventListener('input', ()=> densityVal.textContent=`${density.value}%`);
-  velFloor.addEventListener('input', ()=> velFloorVal.textContent=`${velFloor.value} → 127`);
+  density.addEventListener('input', ()=> { if(densityVal) densityVal.textContent=`${density.value}%`; });
+  velFloor.addEventListener('input', ()=> { if(velFloorVal) velFloorVal.textContent=`${velFloor.value} → 127`; });
 
   regeneratePattern();
 
+  // Ask for MIDI permissions on load (no Enable button)
   if(!('requestMIDIAccess' in navigator)){
-    midiEnableBtn.disabled = true;
     outputSel.disabled = true;
+    channelSel.disabled = true;
+    setStatus('WebMIDI not supported');
+  }else{
+    enableMIDI();
   }
 })();
 </script>

@@ -4,23 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Bassline v2 — Node Pattern + Key-Safe Pitch (internal-ticker)</title>
-
 <link rel="stylesheet" href="./rr-ui.css">
 <script src="./rr-ui.js" defer></script>
-
 </head>
 <body>
   <div class="wrap">
     <div class="row">
       <label for="midiIn">MIDI In</label>
-      <select id="midiIn" aria-label="MIDI Input"></select>
+      <select id="midiIn" aria-label="MIDI Input">
+        <option value="">(loading…)</option>
+      </select>
+
+      <label for="midiInCh">In Ch</label>
+      <select id="midiInCh" aria-label="MIDI Input Channel"></select>
 
       <label for="midiOut">MIDI Out</label>
-      <select id="midiOut" aria-label="MIDI Output"></select>
+      <select id="midiOut" aria-label="MIDI Output">
+        <option value="">(loading…)</option>
+      </select>
+
+      <label for="midiOutCh">Out Ch</label>
+      <select id="midiOutCh" aria-label="MIDI Output Channel"></select>
 
       <button id="panicBtn">Panic</button>
       <span id="midiStatus" class="pill">MIDI: —</span>
-      <span class="pill">Bass Ch <span class="mono">4</span></span>
+      <span class="pill">Bass Ch <span id="bassChOut" class="mono">4</span></span>
     </div>
 
     <div class="row">
@@ -73,9 +81,15 @@
   // =========================================================
   const LOOP_TICKS = 128;      // incoming ticker loop
   const SUBDIV_FALLBACK = 4;   // 16ths per beat
-  const BASS_MIDI_CH = 3;      // 0-based -> Channel 4
-  const CHORD_CH = 0;          // 0-based -> Channel 1
-  const ROOT_CH  = 1;          // 0-based -> Channel 2
+
+  // NOTE: output channel is now user-selectable (state.midiOutCh0)
+  const DEFAULT_BASS_MIDI_CH0 = 3; // 0-based -> Channel 4
+
+  // Incoming MIDI interpretation uses a chord channel and a root channel.
+  // These are now derived from the user-selected "MIDI In Channel":
+  // chordCh0 = selected
+  // rootCh0  = selected + 1 (wrap 16)
+  const DEFAULT_IN_CHORD_CH0 = 0;  // 0-based -> Channel 1
 
   // Pattern density constraints (controlled via Density slider)
   const MIN_HITS = 1;
@@ -106,6 +120,10 @@
   const el = {
     midiIn: $('#midiIn'),
     midiOut: $('#midiOut'),
+    midiInCh: $('#midiInCh'),
+    midiOutCh: $('#midiOutCh'),
+    bassChOut: $('#bassChOut'),
+
     midiStatus: $('#midiStatus'),
     panicBtn: $('#panicBtn'),
     randBtn: $('#randBtn'),
@@ -124,6 +142,7 @@
     legato: $('#legato'),
     chordTonesVal: $('#chordTonesVal'),
     densityVal: $('#densityVal'),
+    // NOTE: octJumpVal / legatoVal are not in the HTML; keep null-safe usage.
     octJumpVal: $('#octJumpVal'),
     legatoVal: $('#legatoVal'),
 
@@ -149,6 +168,11 @@
     density: 50,          // 0..100 -> [2..10] hits
     octaveJump: 0,
     legato: 70,
+
+    // MIDI routing + channels
+    midiInChordCh0: DEFAULT_IN_CHORD_CH0,  // 0..15 (user-selectable)
+    midiInRootCh0:  (DEFAULT_IN_CHORD_CH0 + 1) & 0x0F, // derived
+    midiOutCh0: DEFAULT_BASS_MIDI_CH0,     // 0..15 (user-selectable)
 
     // key
     hasKey: false,
@@ -206,9 +230,16 @@
     async init() {
       try {
         this.access = await navigator.requestMIDIAccess({ sysex:false });
-        this.access.onstatechange = () => { this.refreshInputs(); this.refreshOutputs(); };
+
+        // Hot-plug
+        this.access.onstatechange = () => {
+          this.refreshInputs();
+          this.refreshOutputs();
+        };
+
         this.refreshInputs();
         this.refreshOutputs();
+
         el.midiStatus.textContent = 'MIDI: ready';
       } catch (e) {
         el.midiStatus.textContent = 'MIDI: unavailable';
@@ -223,6 +254,7 @@
       const ins = this.inputs();
       const old = el.midiIn.value;
       el.midiIn.innerHTML = '';
+
       if (!ins.length) {
         const opt = document.createElement('option');
         opt.value = '';
@@ -231,12 +263,15 @@
         this.selectInById('');
         return;
       }
+
       ins.forEach(i => {
         const opt = document.createElement('option');
         opt.value = i.id;
         opt.textContent = i.name || i.manufacturer || i.id;
         el.midiIn.appendChild(opt);
       });
+
+      // Keep selection stable when possible; otherwise fall back to first
       const pick = ins.find(i => i.id === old) || ins[0];
       el.midiIn.value = pick.id;
       this.selectInById(pick.id);
@@ -246,6 +281,7 @@
       const outs = this.outputs();
       const old = el.midiOut.value;
       el.midiOut.innerHTML = '';
+
       if (!outs.length) {
         const opt = document.createElement('option');
         opt.value = '';
@@ -254,12 +290,15 @@
         this.selectOutById('');
         return;
       }
+
       outs.forEach(o => {
         const opt = document.createElement('option');
         opt.value = o.id;
         opt.textContent = o.name || o.manufacturer || o.id;
         el.midiOut.appendChild(opt);
       });
+
+      // Keep selection stable when possible; otherwise fall back to first
       const pick = outs.find(o => o.id === old) || outs[0];
       el.midiOut.value = pick.id;
       this.selectOutById(pick.id);
@@ -279,16 +318,16 @@
 
     send(bytes) { if (this.out) this.out.send(bytes); },
 
-    noteOn(note, vel=96, ch=BASS_MIDI_CH) {
+    noteOn(note, vel=96, ch=state.midiOutCh0) {
       this.send([0x90 + (ch & 0x0F), note & 0x7F, vel & 0x7F]);
     },
-    noteOff(note, ch=BASS_MIDI_CH) {
+    noteOff(note, ch=state.midiOutCh0) {
       this.send([0x80 + (ch & 0x0F), note & 0x7F, 0]);
     },
     allNotesOff() {
       if (!this.out) return;
       for (let ch=0; ch<16; ch++) this.out.send([0xB0 + ch, 123, 0]);
-      for (let n=0; n<128; n++) this.out.send([0x80 + (BASS_MIDI_CH & 0x0F), n, 0]);
+      for (let n=0; n<128; n++) this.out.send([0x80 + (state.midiOutCh0 & 0x0F), n, 0]);
     },
     allNotesOffChannel(ch) {
       if (!this.out) return;
@@ -325,11 +364,14 @@
     const isNoteOn  = (type === 0x90 && vel > 0);
     const isNoteOff = (type === 0x80) || (type === 0x90 && vel === 0);
 
-    if (ch === CHORD_CH) {
+    // Apply MIDI In Channel mapping:
+    // chord channel = state.midiInChordCh0
+    // root  channel = state.midiInRootCh0 (derived = chord+1 wrap)
+    if (ch === (state.midiInChordCh0 & 0x0F)) {
       if (isNoteOn) state.chordNotesSet.add(note);
       else if (isNoteOff) state.chordNotesSet.delete(note);
       scheduleChordRecompute();
-    } else if (ch === ROOT_CH) {
+    } else if (ch === (state.midiInRootCh0 & 0x0F)) {
       if (isNoteOn) state.currentRootNote = note;
       else if (isNoteOff) { if (state.currentRootNote === note) state.currentRootNote = -1; }
       scheduleChordRecompute();
@@ -961,13 +1003,13 @@ function computeDurationTicks(source, fromGlobalTick) {
     if (state.activeNote != null) {
       const n = state.activeNote|0;
       // Ensure the previous note is definitely stopped before starting the next one.
-      MIDI.noteOff(n, BASS_MIDI_CH);
+      MIDI.noteOff(n, state.midiOutCh0);
       // Extra safety: force silent state on that channel (prevents stuck overlaps in some synths)
-      MIDI.allNotesOffChannel(BASS_MIDI_CH);
+      MIDI.allNotesOffChannel(state.midiOutCh0);
       state.activeNote = null;
     } else {
       // Still safe to send a channel flush if something external got stuck
-      MIDI.allNotesOffChannel(BASS_MIDI_CH);
+      MIDI.allNotesOffChannel(state.midiOutCh0);
     }
   }
 
@@ -978,7 +1020,7 @@ function computeDurationTicks(source, fromGlobalTick) {
     stopCurrentBassNote();
 
     // Start new note
-    MIDI.noteOn(note, vel, BASS_MIDI_CH);
+    MIDI.noteOn(note, vel, state.midiOutCh0);
     state.activeNote = note|0;
 
     // Schedule Note Off with epsilon to avoid micro-overlaps
@@ -986,7 +1028,7 @@ function computeDurationTicks(source, fromGlobalTick) {
     state.activeOffTimer = setTimeout(() => {
       // Only turn off if this is still the active note
       if (state.activeNote === (note|0)) {
-        MIDI.noteOff(note, BASS_MIDI_CH);
+        MIDI.noteOff(note, state.midiOutCh0);
         state.activeNote = null;
       }
       state.activeOffTimer = null;
@@ -1123,8 +1165,10 @@ function syncSliders({ regeneratePattern=false } = {}) {
 
   el.chordTonesVal.textContent = String(state.chordTonesLevel|0);
   el.densityVal.textContent = String(densityToHits(state.density));
-  el.octJumpVal.textContent = String(state.octaveJump|0);
-  el.legatoVal.textContent = String(state.legato|0);
+
+  // Null-safe (these spans are not present in this UI)
+  if (el.octJumpVal) el.octJumpVal.textContent = String(state.octaveJump|0);
+  if (el.legatoVal) el.legatoVal.textContent = String(state.legato|0);
 
   if (regeneratePattern) {
     // Keep current pattern length, regenerate rhythm immediately to reflect density change
@@ -1170,7 +1214,7 @@ for (const s of sliders) {
 
     // clear current mono note
     try { stopCurrentBassNote(); } catch {}
-    try { MIDI.allNotesOffChannel(BASS_MIDI_CH); } catch {}
+    try { MIDI.allNotesOffChannel(state.midiOutCh0); } catch {}
     try { MIDI.allNotesOff(); } catch {}
     state.scheduled.clear();
     el.debugOut.textContent = `PANIC: ${reason}`;
@@ -1189,10 +1233,52 @@ for (const s of sliders) {
   }, 150);
 
   // =========================================================
+  // MIDI Channel dropdowns
+  // =========================================================
+  function populateChannelSelect(sel, defaultCh1Based) {
+    if (!sel) return;
+    const old = sel.value;
+    sel.innerHTML = '';
+    for (let ch=1; ch<=16; ch++) {
+      const opt = document.createElement('option');
+      opt.value = String(ch);
+      opt.textContent = String(ch);
+      sel.appendChild(opt);
+    }
+    sel.value = old && Number.isFinite(parseInt(old,10)) ? old : String(defaultCh1Based|0);
+  }
+
+  function setMidiInChannelFromUI() {
+    const ch1 = parseInt(el.midiInCh.value, 10);
+    const chordCh0 = ((Number.isFinite(ch1) ? ch1 : 1) - 1) & 0x0F;
+    state.midiInChordCh0 = chordCh0;
+    state.midiInRootCh0 = (chordCh0 + 1) & 0x0F;
+
+    // No forced clearing of held notes here: keep behavior stable.
+    // Just recompute UI from whatever is currently held.
+    scheduleChordRecompute();
+  }
+
+  function setMidiOutChannelFromUI() {
+    const ch1 = parseInt(el.midiOutCh.value, 10);
+    const outCh0 = ((Number.isFinite(ch1) ? ch1 : 1) - 1) & 0x0F;
+
+    // If a note is currently active, stop it on the OLD channel before switching.
+    try { stopCurrentBassNote(); } catch {}
+
+    state.midiOutCh0 = outCh0;
+
+    if (el.bassChOut) el.bassChOut.textContent = String(outCh0 + 1);
+  }
+
+  // =========================================================
   // Wire UI events
   // =========================================================
   el.midiIn.addEventListener('change', () => MIDI.selectInById(el.midiIn.value));
   el.midiOut.addEventListener('change', () => MIDI.selectOutById(el.midiOut.value));
+  el.midiInCh.addEventListener('change', () => setMidiInChannelFromUI());
+  el.midiOutCh.addEventListener('change', () => setMidiOutChannelFromUI());
+
   el.panicBtn.addEventListener('click', () => panic('button'));
   el.randBtn.addEventListener('click', () => {
     const len = (state.pattern && state.pattern.len) ? (state.pattern.len|0) : (parseInt(el.patternLen.value,10) || 16);
@@ -1214,10 +1300,20 @@ for (const s of sliders) {
   // Init
   // =========================================================
   function init() {
+    // Populate channel dropdowns first (always interactive)
+    populateChannelSelect(el.midiInCh, DEFAULT_IN_CHORD_CH0 + 1);
+    populateChannelSelect(el.midiOutCh, DEFAULT_BASS_MIDI_CH0 + 1);
+
+    // Apply defaults (and update Bass Ch pill)
+    setMidiInChannelFromUI();
+    setMidiOutChannelFromUI();
+
     syncSliders();
     initKeyBC();
     initTicker();
     initRandomizeBC();
+
+    // Request MIDI permission automatically on load
     MIDI.init();
 
     // start with a pattern immediately

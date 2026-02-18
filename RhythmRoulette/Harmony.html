@@ -19,9 +19,11 @@
         <div class="row">
           <label class="keepTextLabel">MIDI Out</label>
           <select id="midiOut" aria-label="MIDI Out"></select>
+          <label for="midiCh">Ch</label>
+          <select id="midiCh" aria-label="MIDI Channel"></select>
           <button id="panic" class="ghost">Panic (All Notes Off)</button>
           <span id="midiStatus" class="pill">MIDI: —</span>
-          <span class="pill">Ch 1 • Vel 96</span>
+          <span class="pill">Ch <span class="mono" id="chLabel">1</span> • Vel 96</span>
         </div>
         <div class="divider"></div>
         <div class="row">
@@ -80,6 +82,22 @@
   </div>
 
 <script>
+
+    function fillChannelSelect(sel, defaultCh1Based){
+      sel.innerHTML='';
+      for(let ch=1; ch<=16; ch++){
+        const opt=document.createElement('option');
+        opt.value=String(ch);
+        opt.textContent=String(ch);
+        sel.appendChild(opt);
+      }
+      sel.value=String(defaultCh1Based);
+    }
+    function readChannel0(sel){
+      const ch1 = parseInt(sel.value,10) || 1;
+      const clamped = Math.max(1, Math.min(16, ch1));
+      return clamped-1;
+    }
 (() => {
   // -------------------- User-specified minor-only progression library --------------------
   const PROGRESSIONS = [
@@ -290,12 +308,21 @@ function pcToNearestMidi(pc, lo=54, hi=66){
 
   // -------------------- MIDI --------------------
   const MIDI = {
-    access:null, out:null, channel:0, noteOnVel:96,
+    // MIDI channel UI
+        access:null, out:null, channel:0, noteOnVel:96,
     async init(){
       try{
         this.access = await navigator.requestMIDIAccess({ sysex:false });
         this.refreshOutputs();
         document.getElementById('midiStatus').textContent = 'MIDI: ready';
+        // Rescan a few times in case ports appear shortly after permission.
+        let tries = 0;
+        const kick = () => {
+          tries++;
+          this.refreshOutputs();
+          if (this.outputs().length === 0 && tries < 6) setTimeout(kick, 150 * tries);
+        };
+        setTimeout(kick, 50);
         this.access.onstatechange = ()=> this.refreshOutputs();
       }catch(err){
         document.getElementById('midiStatus').textContent = 'MIDI unavailable';
@@ -314,10 +341,12 @@ function pcToNearestMidi(pc, lo=54, hi=66){
       if (outs.length===0){
         const opt=document.createElement('option'); opt.value=''; opt.textContent='(no outputs)'; sel.appendChild(opt);
         this.out=null;
+        sel.disabled = true;
       } else {
         const pick = outs.find(o=>o.id===oldId) || outs[0];
         sel.value = pick.id;
         this.out = pick;
+        sel.disabled = false;
       }
     },
     outputs(){
@@ -946,6 +975,16 @@ function publishKey(k){
     refreshPlacementUI();
     setAdd7(false);
     bindUI();
+    const midiChSel = document.getElementById('midiCh');
+const chLabel = document.getElementById('chLabel');
+fillChannelSelect(midiChSel, 1);
+MIDI.channel = readChannel0(midiChSel);
+if (chLabel) chLabel.textContent = String(parseInt(midiChSel.value,10)||1);
+midiChSel.addEventListener('change', ()=>{
+  MIDI.channel = readChannel0(midiChSel);
+  if (chLabel) chLabel.textContent = String(parseInt(midiChSel.value,10)||1);
+});
+
     MIDI.init();
     initTicker();
     initRandomizeChannel();
