@@ -9,19 +9,14 @@
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <h1>ProgLooper — External-Ticker MIDI Chord Player</h1>
-      <div class="muted">Minor-only harmony • Subscribes to <span class="mono">BroadcastChannel('internal-ticker')</span> • External: 32 beats (128 ticks) • Internal loop: <b>4 / 8 / 16 / 32</b> beats • Legato • Auto-silence on stop • <b>Inner-chord start jitter (quantized)</b></div>
-    </header>
 
     <section class="grid">
       <div class="card stack">
         <div class="row">
-          <label class="keepTextLabel">MIDI Out</label>
+          <label class="keepTextLabel">Output</label>
           <select id="midiOut" aria-label="MIDI Out"></select>
           <label for="midiCh">Ch</label>
           <select id="midiCh" aria-label="MIDI Channel"></select>
-          <button id="panic" class="ghost">Panic (All Notes Off)</button>
           <span id="midiStatus" class="pill">MIDI: —</span>
           <span class="pill">Ch <span class="mono" id="chLabel">1</span> • Vel 96</span>
         </div>
@@ -36,8 +31,8 @@
           <select id="keySelect"></select>
           <label class="nowrap">Source</label>
           <select id="keySource">
-          <option value="manual">Manual</option>
-          <option value="external">External</option>
+            <option value="manual">Manual</option>
+            <option value="external">External</option>
           </select>
           <span class="pill" id="keyExtStatus" style="display:none">EXT</span>
 
@@ -57,25 +52,6 @@
           <label class="nowrap keepLabel"><input type="checkbox" id="enableJitter" checked> Enable Jitter</label>
           <label class="nowrap keepLabel">Max Jitter (ticks): <input type="number" id="jitterMax" min="0" max="8" step="1" value="4"></label>
           <button id="randGroove" class="ghost">Randomize Groove</button>
-          <span class="pill" id="jitterInfo">Jitter: ON ±4</span>
-          <span class="pill" id="placementInfo">Placement: 16ths</span>
-        </div>
-        <div class="divider"></div>
-        <div class="row"><div class="big" id="nowPlaying">—</div></div>
-      </div>
-
-      <div class="card stack">
-        <div class="statusline">
-          <div class="statuscell"><div class="muted">count (0–127)</div><div id="st_count" class="mono">—</div></div>
-          <div class="statuscell"><div class="muted">loopBeat ext (0–31)</div><div id="st_beat" class="mono">—</div></div>
-          <div class="statuscell"><div class="muted">internalBeat</div><div id="st_iBeat" class="mono">—</div></div>
-          <div class="statuscell"><div class="muted">internalTick</div><div id="st_iTick" class="mono">—</div></div>
-          <div class="statuscell"><div class="muted">loopLen</div><div id="st_loopLen" class="mono">—</div></div>
-          <div class="statuscell"><div class="muted">bpm</div><div id="st_bpm" class="mono">—</div></div>
-          <div class="statuscell"><div class="muted">Δ (debug)</div><div id="st_deltas" class="mono">—</div></div>
-        </div>
-        <div class="row">
-          <div class="muted">Chord 1 always starts at tick 0; last chord always ends at loop end. Inner chords can start ±J ticks from their ideal positions, quantized to ticks, never overlapping. Above 130 BPM, inner chord starts are constrained to 8th-note grid (downbeat & upbeat only).</div>
         </div>
       </div>
     </section>
@@ -314,7 +290,7 @@ function pcToNearestMidi(pc, lo=54, hi=66){
       try{
         this.access = await navigator.requestMIDIAccess({ sysex:false });
         this.refreshOutputs();
-        document.getElementById('midiStatus').textContent = 'MIDI: ready';
+        document.getElementById('midiStatus').textContent = 'Connected';
         // Rescan a few times in case ports appear shortly after permission.
         let tries = 0;
         const kick = () => {
@@ -518,7 +494,7 @@ function publishKey(k){
     state.currentRootCh2 = -1;
     state.currentChordIndex = -1;
     if (state.silenceTimer) { clearTimeout(state.silenceTimer); state.silenceTimer=null; }
-    document.getElementById('nowPlaying').textContent = `— (${reason})`;
+    const np = document.getElementById('nowPlaying'); if (np) np.textContent = `— (${reason})`;
   }
 
   function scheduleSilenceGuard(tickMs){
@@ -532,21 +508,12 @@ function publishKey(k){
   // -------------------- UI wiring --------------------
   const el = {
     midiOut: document.getElementById('midiOut'),
-    panic: document.getElementById('panic'),
     randProg: document.getElementById('randProg'),
     randKey: document.getElementById('randKey'),
     keySelect: document.getElementById('keySelect'),
     add7: document.getElementById('add7'),
     add9: document.getElementById('add9'),
     progLabel: document.getElementById('progLabel'),
-    nowPlaying: document.getElementById('nowPlaying'),
-    st_count: document.getElementById('st_count'),
-    st_beat: document.getElementById('st_beat'),
-    st_iBeat: document.getElementById('st_iBeat'),
-    st_iTick: document.getElementById('st_iTick'),
-    st_loopLen: document.getElementById('st_loopLen'),
-    st_bpm: document.getElementById('st_bpm'),
-    st_deltas: document.getElementById('st_deltas'),
     loopLen: document.getElementById('loopLen'),
     loopInfo: document.getElementById('loopInfo'),
     enableJitter: document.getElementById('enableJitter'),
@@ -567,23 +534,24 @@ function publishKey(k){
   function refreshProgLabel(){ el.progLabel.textContent = `[ ${fmtProg(state.progression)} ]  (${state.progression.length} chords)`; }
   function refreshLoopUI(){
     el.loopLen.value = String(state.loopBeats);
-    el.st_loopLen.textContent = state.loopBeats;
+    if (el.st_loopLen) el.st_loopLen.textContent = state.loopBeats;
     const per = (state.loopBeats / state.progression.length).toFixed(2);
     el.loopInfo.textContent = `${state.loopBeats} beats • ~${per} beats/chord`;
   }
   function refreshJitterUI(){
     el.enableJitter.checked = state.jitterEnabled;
     el.jitterMax.value = state.jitterMax;
-    el.jitterInfo.textContent = `Jitter: ${state.jitterEnabled ? 'ON' : 'OFF'} ${state.jitterEnabled ? `±${state.jitterMax}` : ''}`;
-    el.st_deltas.textContent = state.jitterDeltas.length ? `[${state.jitterDeltas.join(', ')}]` : '—';
+    if (el.jitterInfo) el.jitterInfo.textContent = `Jitter: ${state.jitterEnabled ? 'ON' : 'OFF'} ${state.jitterEnabled ? `±${state.jitterMax}` : ''}`;
+    if (el.st_deltas) el.st_deltas.textContent = state.jitterDeltas.length ? `[${state.jitterDeltas.join(', ')}]` : '—';
   }
   function refreshPlacementUI(){
+    if (!el.placementInfo) return;
     if (state.hiSpeed){
-      el.placementInfo.textContent = 'Placement: 8ths (down & up)';
-      el.placementInfo.style.borderColor = '#2b7';
+      if (el.placementInfo) el.placementInfo.textContent = 'Placement: 8ths (down & up)';
+      if (el.placementInfo) el.placementInfo.style.borderColor = '#2b7';
     } else {
-      el.placementInfo.textContent = 'Placement: 16ths (full options)';
-      el.placementInfo.style.borderColor = '#22313e';
+      if (el.placementInfo) el.placementInfo.textContent = 'Placement: 16ths (full options)';
+      if (el.placementInfo) el.placementInfo.style.borderColor = '#22313e';
     }
   }
 
@@ -758,11 +726,11 @@ function publishKey(k){
     const iBeat = extBeat % state.loopBeats;
     const iTick = ((t % 128) % (4*state.loopBeats));
 
-    el.st_count.textContent = t;
-    el.st_beat.textContent = extBeat;
-    el.st_iBeat.textContent = iBeat;
-    el.st_iTick.textContent = iTick;
-    el.st_bpm.textContent = msg.bpm != null ? Math.round(msg.bpm) : '—';
+    if (el.st_count) el.st_count.textContent = t;
+    if (el.st_beat) el.st_beat.textContent = extBeat;
+    if (el.st_iBeat) el.st_iBeat.textContent = iBeat;
+    if (el.st_iTick) el.st_iTick.textContent = iTick;
+    if (el.st_bpm) el.st_bpm.textContent = msg.bpm != null ? Math.round(msg.bpm) : '—';
 
     const bpm = (msg.bpm && msg.bpm>0) ? msg.bpm : 120;
     const subdiv = (msg.subdiv && msg.subdiv>0) ? msg.subdiv : 4;
@@ -807,7 +775,7 @@ function publishKey(k){
       if (state.currentRootCh2 >= 0) MIDI.noteOnCh(state.currentRootCh2, 1); // 0-based idx 1 = Ch.2
 
       const chordName = describeChord(rn, state.key, state.add7, state.add9);
-      document.getElementById('nowPlaying').textContent = `Chord ${idx+1}/${state.progression.length}: ${rn} → ${chordName}`;
+      const np = document.getElementById('nowPlaying'); if (np) np.textContent = `Chord ${idx+1}/${state.progression.length}: ${rn} → ${chordName}`;
     }
     // Syncopated re-strikes inside the active chord window (strictly on the tick grid)
     if (!boundaryChange){
@@ -905,7 +873,6 @@ function publishKey(k){
   // -------------------- Event bindings --------------------
   function bindUI(){
     el.midiOut.addEventListener('change', e=> MIDI.selectById(e.target.value));
-    el.panic.addEventListener('click', ()=> silenceAll('panic'));
 
     el.randProg.addEventListener('click', ()=>{
       let next; do { next = pickRandom(PROGRESSIONS); } while (next === state.progression && PROGRESSIONS.length>1);

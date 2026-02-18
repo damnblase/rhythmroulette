@@ -5,6 +5,36 @@
   <title>RR</title>
   <link rel="stylesheet" href="./rr-ui.css">
   <script src="./rr-ui.js" defer></script>
+
+    <style>
+    /* --- Instrument Controls layout improvements (UI-only) --- */
+    #instrumentControls .instrument-row{
+      display:flex;
+      flex-wrap:nowrap;
+      align-items:flex-start;
+      justify-content:center;   /* no more stretching */
+      gap:40px;                 /* adjust this value to change spacing */
+    }
+    #instrumentControls .instrument{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      text-align:center;
+    }
+    #instrumentControls .instrument h3{
+      font-size:12px;
+      margin:0 0 6px 0;
+      line-height:1.1;
+      text-align:center;
+    }
+    #instrumentControls .instrument .instrument-pair{
+      display:flex;
+      flex-direction:row;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+    }
+  </style>
 </head>
 
 <body>
@@ -36,17 +66,17 @@
     </div>
 
     <!-- 2. Preset Controls (with Probability Table inside) -->
-    <div class="section" id="presetControls">
+    <div class="section" id="presetControls"><div class="minui-row">
+        <select id="presetSelect"></select>
+        <button id="removePreset">Remove Preset</button>
+      </div>
+
+      
       <div class="minui-row">
         <input type="text" id="presetNameInput" value="preset" aria-label="Preset Name">
         <button id="savePreset">Save Preset</button>
         <button id="loadPresets">Load Presets</button>
         <input type="file" id="loadPresetsFile" style="display:none" multiple>
-      </div>
-
-      <div class="minui-row">
-        <select id="presetSelect"></select>
-        <button id="removePreset">Remove Preset</button>
       </div>
 
       <!-- Lock Preset toggle kept in DOM but hidden/removed from view -->
@@ -63,11 +93,6 @@
       <div id="probabilityTableContainer" style="display:none"></div>
     </div>
 
-    <!-- Toggle button for Instrument Controls (kept in DOM; hidden by CSS) -->
-    <div>
-      <button id="toggleInstrumentControls">Show Instrument Controls</button>
-    </div>
-
     <!-- 3. Instrument Specific Controls -->
     <div class="section" id="instrumentControls">
       <h2>Instrument Controls</h2>
@@ -77,47 +102,50 @@
         <button id="unmuteAll">Unmute All</button>
       </div>
 
-      <!-- Order: [Name] [S] [M] [Randomize] [Simplify] -->
-      <div class="instrument" id="kickControls">
-        <h3>Kick</h3>
+      
+  <!-- Order: [Name] above [S][M] -->
+  <div class="instrument-row" aria-label="Instrument Controls Row">
+    <div class="instrument" id="kickControls">
+      <h3>Kick</h3>
+      <div class="instrument-pair">
         <label class="checkbox-label"><input type="checkbox" id="kickSoloCheckbox"> S</label>
         <label class="checkbox-label"><input type="checkbox" id="kickMuteCheckbox"> M</label>
-        <button id="randomizeKick">Randomize</button>
-        <button id="simplifyKick">Simplify</button>
-      </div>
-
-      <div class="instrument" id="snareControls">
-        <h3>Snare</h3>
-        <label class="checkbox-label"><input type="checkbox" id="snareSoloCheckbox"> S</label>
-        <label class="checkbox-label"><input type="checkbox" id="snareMuteCheckbox"> M</label>
-        <button id="randomizeSnare">Randomize</button>
-        <button id="simplifySnare">Simplify</button>
-      </div>
-
-      <div class="instrument" id="hiHatControls">
-        <h3>Hi-Hat</h3>
-        <label class="checkbox-label"><input type="checkbox" id="hiHatSoloCheckbox"> S</label>
-        <label class="checkbox-label"><input type="checkbox" id="hiHatMuteCheckbox"> M</label>
-        <button id="randomizeHiHat">Randomize</button>
-        <button id="simplifyHiHat">Simplify</button>
-      </div>
-
-      <div class="instrument" id="tomControls">
-        <h3>Percussion</h3>
-        <label class="checkbox-label"><input type="checkbox" id="tomSoloCheckbox"> S</label>
-        <label class="checkbox-label"><input type="checkbox" id="tomMuteCheckbox"> M</label>
-        <button id="randomizeTom">Randomize</button>
-        <button id="simplifyTom">Simplify</button>
-      </div>
-
-      <div class="instrument" id="clapControls">
-        <h3>Clap</h3>
-        <label class="checkbox-label"><input type="checkbox" id="clapSoloCheckbox"> S</label>
-        <label class="checkbox-label"><input type="checkbox" id="clapMuteCheckbox"> M</label>
-        <button id="randomizeClap">Randomize</button>
-        <button id="simplifyClap">Simplify</button>
       </div>
     </div>
+
+    <div class="instrument" id="snareControls">
+      <h3>Snare</h3>
+      <div class="instrument-pair">
+        <label class="checkbox-label"><input type="checkbox" id="snareSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="snareMuteCheckbox"> M</label>
+      </div>
+    </div>
+
+    <div class="instrument" id="hiHatControls">
+      <h3>Hi-Hat</h3>
+      <div class="instrument-pair">
+        <label class="checkbox-label"><input type="checkbox" id="hiHatSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="hiHatMuteCheckbox"> M</label>
+      </div>
+    </div>
+
+    <div class="instrument" id="tomControls">
+      <h3>Percussion</h3>
+      <div class="instrument-pair">
+        <label class="checkbox-label"><input type="checkbox" id="tomSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="tomMuteCheckbox"> M</label>
+      </div>
+    </div>
+
+    <div class="instrument" id="clapControls">
+      <h3>Clap</h3>
+      <div class="instrument-pair">
+        <label class="checkbox-label"><input type="checkbox" id="clapSoloCheckbox"> S</label>
+        <label class="checkbox-label"><input type="checkbox" id="clapMuteCheckbox"> M</label>
+      </div>
+    </div>
+  </div>
+</div>
   </div>
 
   <script>
@@ -756,18 +784,6 @@
     });
 
     /***** TOGGLE UI VISIBILITY *****/
-    document.getElementById('toggleInstrumentControls').addEventListener('click', () => {
-      const instControls = document.getElementById('instrumentControls');
-      const toggleBtn = document.getElementById('toggleInstrumentControls');
-      if (window.getComputedStyle(instControls).display === "none") {
-        instControls.style.display = "block";
-        toggleBtn.textContent = "Hide Instrument Controls";
-      } else {
-        instControls.style.display = "none";
-        toggleBtn.textContent = "Show Instrument Controls";
-      }
-    });
-
     let tableVisible = false;
     document.getElementById("toggleTable").addEventListener("click", function() {
       tableVisible = !tableVisible;
@@ -827,20 +843,6 @@
     });
 
     /***** PER-INSTRUMENT BUTTONS *****/
-    document.getElementById('randomizeKick').addEventListener('click', () => randomizeInstrumentPattern("Kick"));
-    document.getElementById('simplifyKick').addEventListener('click', () => simplifyInstrumentPattern("Kick"));
-
-    document.getElementById('randomizeSnare').addEventListener('click', () => randomizeInstrumentPattern("Snare"));
-    document.getElementById('simplifySnare').addEventListener('click', () => simplifyInstrumentPattern("Snare"));
-
-    document.getElementById('randomizeHiHat').addEventListener('click', () => randomizeInstrumentPattern("Hi-Hat"));
-    document.getElementById('simplifyHiHat').addEventListener('click', () => simplifyInstrumentPattern("Hi-Hat"));
-
-    document.getElementById('randomizeTom').addEventListener('click', () => randomizeInstrumentPattern("Hi-Hat") /* placeholder to keep original structure */);
-    document.getElementById('simplifyTom').addEventListener('click', () => simplifyInstrumentPattern("Percussion"));
-
-    document.getElementById('randomizeClap').addEventListener('click', () => randomizeInstrumentPattern("Clap"));
-    document.getElementById('simplifyClap').addEventListener('click', () => simplifyInstrumentPattern("Clap"));
   ///////
   ///--WS_COMMS----//
     // Variable globale pour la connexion WebSocket
