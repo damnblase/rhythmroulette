@@ -9,14 +9,10 @@
 
 <body>
   <div class="minui-wrap">
-    <h1>RR</h1>
-
     <!-- 1. Transport and Global Settings -->
     <div class="section" id="transportSection">
-      <h2>Transport & Global Settings</h2>
-
       <div class="minui-row">
-        <label for="midiOutputSelect">MIDI Output</label>
+        <label for="midiOutputSelect">Output</label>
         <select id="midiOutputSelect"></select>
         <label for="midiCh">Ch</label>
         <select id="midiCh" aria-label="MIDI Channel"></select>
@@ -41,16 +37,14 @@
 
     <!-- 2. Preset Controls (with Probability Table inside) -->
     <div class="section" id="presetControls">
-      <h2>Preset Controls</h2>
-
       <div class="minui-row">
+        <input type="text" id="presetNameInput" value="preset" aria-label="Preset Name">
         <button id="savePreset">Save Preset</button>
         <button id="loadPresets">Load Presets</button>
         <input type="file" id="loadPresetsFile" style="display:none" multiple>
       </div>
 
       <div class="minui-row">
-        <label for="presetSelect">Loaded Presets:</label>
         <select id="presetSelect"></select>
         <button id="removePreset">Remove Preset</button>
       </div>
@@ -122,18 +116,6 @@
         <label class="checkbox-label"><input type="checkbox" id="clapMuteCheckbox"> M</label>
         <button id="randomizeClap">Randomize</button>
         <button id="simplifyClap">Simplify</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Preset Naming Modal -->
-  <div id="presetModal">
-    <div id="presetModalContent">
-      <label for="presetNameInput">Enter a name for your preset:</label>
-      <input type="text" id="presetNameInput" value="preset">
-      <div class="minui-row">
-        <button id="presetModalSave">Save Preset</button>
-        <button id="presetModalCancel">Cancel</button>
       </div>
     </div>
   </div>
@@ -461,48 +443,109 @@
     });
 
     /***** PRESET SAVE/LOAD *****/
-    document.getElementById("savePreset").addEventListener("click", () => {
-      document.getElementById("presetModal").style.display = "flex";
-      document.getElementById("presetNameInput").focus();
-    });
-    document.getElementById("presetNameInput").addEventListener("keydown", function(e) {
-      if (e.key === "Enter") { e.preventDefault(); document.getElementById("presetModalSave").click(); }
-    });
+    function sanitizePresetName(raw) {
+      const name = String(raw || "").trim();
+      return name.length ? name : "preset";
+    }
 
-    document.getElementById("presetModalSave").addEventListener("click", async () => {
-      const presetName = document.getElementById("presetNameInput").value || "preset";
-      const preset = {
-        kick: kickProbabilities,
-        snare: snareProbabilities,
-        hihat: hiHatProbabilities,
-        hightom: tomProbabilities,
-        clap: clapProbabilities
+    function sanitizeFileName(name) {
+      // Basic cross-platform filename sanitization
+      return String(name || "preset")
+        .trim()
+        .replace(/[\/\\?%*:|"<>]/g, "_")
+        .replace(/\s+/g, " ")
+        .slice(0, 120) || "preset";
+    }
+
+    function buildCurrentPresetData() {
+      // Copy arrays to avoid keeping references to live probability arrays
+      return {
+        kick: kickProbabilities.slice(),
+        snare: snareProbabilities.slice(),
+        hihat: hiHatProbabilities.slice(),
+        hightom: tomProbabilities.slice(),
+        clap: clapProbabilities.slice()
       };
-      const presetJSON = JSON.stringify(preset, null, 2);
+    }
+
+    async function downloadPresetJSON(presetName, presetData) {
+      const safeName = sanitizeFileName(presetName);
+      const presetJSON = JSON.stringify(presetData, null, 2);
+
       if (window.showSaveFilePicker) {
         try {
           const handle = await window.showSaveFilePicker({
-            suggestedName: presetName + ".json",
+            suggestedName: safeName + ".json",
             types: [{ description: "JSON Files", accept: { "application/json": [".json"] } }]
           });
           const writable = await handle.createWritable();
           await writable.write(presetJSON);
           await writable.close();
           console.log("Preset saved:", handle.name);
-        } catch (err) { console.error("Error saving file:", err); }
-      } else {
-        const blob = new Blob([presetJSON], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = presetName + ".json";
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        console.log("Preset saved (fallback).");
+          return;
+        } catch (err) {
+          // If user cancels, just stop here (library still saved)
+          console.error("Error saving file:", err);
+          return;
+        }
       }
-      document.getElementById("presetModal").style.display = "none";
+
+      const blob = new Blob([presetJSON], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = safeName + ".json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      console.log("Preset saved (fallback).");
+    }
+
+    function savePresetToLibrary(presetName, presetData) {
+      const name = sanitizePresetName(presetName);
+
+      // Single-save flow: update existing preset if same name exists, else add new
+      const existingIndex = presetLibrary.findIndex(p => String(p.name) === name);
+      if (existingIndex >= 0) {
+        presetLibrary[existingIndex].data = presetData;
+      } else {
+        presetLibrary.push({ name, data: presetData });
+      }
+
+      updatePresetDropdown(); // keeps alphabetical sorting
+
+      // Auto-select the saved preset without triggering "change" side effects
+      const newIndex = presetLibrary.findIndex(p => String(p.name) === name);
+      const select = document.getElementById("presetSelect");
+      if (newIndex >= 0) {
+        select.value = String(newIndex);
+      }
+    }
+
+    async function handleSavePresetClick() {
+      const input = document.getElementById("presetNameInput");
+      const presetName = sanitizePresetName(input.value);
+      input.value = presetName;
+
+      const presetData = buildCurrentPresetData();
+
+      // 1) Save into in-app library + refresh dropdown + auto-select
+      savePresetToLibrary(presetName, presetData);
+
+      // 2) Download JSON every time (matches app preset structure)
+      await downloadPresetJSON(presetName, presetData);
+    }
+
+    document.getElementById("savePreset").addEventListener("click", () => {
+      handleSavePresetClick();
     });
-    document.getElementById("presetModalCancel").addEventListener("click", () => {
-      document.getElementById("presetModal").style.display = "none";
+
+    document.getElementById("presetNameInput").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("savePreset").click();
+      }
     });
 
     document.getElementById("loadPresets").addEventListener("click", () => {

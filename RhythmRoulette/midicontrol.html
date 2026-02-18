@@ -3,777 +3,524 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Web MIDI Controller + Monitor (Ableton)</title>
-<link rel="stylesheet" href="./rr-ui.css">
-<script src="./rr-ui.js" defer></script>
+  <title>MIDI Control (Ableton)</title>
+
+  <link rel="stylesheet" href="./rr-ui.css">
+  <script src="./rr-ui.js" defer></script>
+
+  <!-- Stage-ready minimal override -->
+  <style>
+    /**********************************************************************
+     * TOGGLE ON STATE VISUAL FIX (CSS-DRIVEN, LOGIC UNCHANGED)
+     **********************************************************************/
+    :root{
+      --_onBlue: var(--minui-accent, var(--rr-accent, var(--accent, var(--primary, #0a84ff))));
+      --_onText: var(--minui-accentText, var(--rr-accentText, var(--on-accent, #ffffff)));
+      --_tinyGap: 10px; /* increased tiny visual gap between buttons */
+    }
+
+    #toggles button.toggle.on,
+    .minui-wrap #toggles button.toggle.on,
+    body .minui-wrap #toggles button.toggle.on {
+      background: var(--_onBlue) !important;
+      color: var(--_onText) !important;
+    }
+
+    /**********************************************************************
+     * ADD GAP BETWEEN BUTTONS (VISUAL ONLY)
+     **********************************************************************/
+    #toggles,
+    #momentaries {
+      gap: var(--_tinyGap) !important;
+    }
+
+    /**********************************************************************
+     * "KNOBS" LAYOUT (KEEP BEHAVIOR)
+     **********************************************************************/
+    #sliders.knobs-row {
+      display: flex !important;
+      gap: 16px; /* slightly more spacing between knobs */
+      align-items: flex-end;
+      justify-content: flex-start;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .knob {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px; /* label closer to knob */
+      min-width: 96px;
+    }
+
+    .knob-label-btn {
+      width: 100%;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.1;
+      padding: 6px 8px;
+      border-radius: 10px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .knob input[type="range"] { width: 92px; }
+
+    .rename-inline{
+      width: 100%;
+      border: 0;
+      outline: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      letter-spacing: inherit;
+      text-transform: none;
+      text-align: center;
+    }
+
+    .knob-label {
+      width: 100%;
+      min-height: 22px; /* a touch tighter */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0;
+    }
+  </style>
 </head>
+
 <body>
   <div class="minui-wrap">
-  <h1>Web MIDI Controller + Monitor (Ableton Live)</h1>
+    <!-- Removed top title text “Midi Control” -->
 
-  <div class="panel minui-flatcard">
-    <div class="panel-title">MIDI Setup</div>
+    <div class="panel minui-flatcard">
+      <!-- Removed panel title text “MIDI Out” -->
 
-    <div class="row minui-row">
-      <label>Output
-        <select id="midiOut"></select>
-      </label>
-      <label>Input
-        <select id="midiIn"></select>
-      </label>
-      <span class="pill small mono minui-hidden" id="status">Not connected</span>
-      <span class="right small muted minui-hidden">Channel: <span class="mono" id="chanLabel"></span></span>
-    </div>
-    <div class="row minui-row small muted" style="margin-top:6px;">
-      Tip: Click a control, then in Ableton enter MIDI Map Mode (Cmd/Ctrl+M) and map it.
-    </div>
-  </div>
+      <div class="row minui-row">
+        <label>Output
+          <select id="midiOut"></select>
+        </label>
 
-  <div class="panel minui-flatcard">
-    <div class="panel-title">BPM</div>
-    <div class="row minui-row">
-      <span class="field-label">BPM</span>
-      <input id="bpm" type="number" min="20" max="300" step="1" value="120" />
-      <button id="bpmMinus10">-10</button>
-      <button id="bpmPlus10">+10</button>
+        <!-- Output channel dropdown (1–16) -->
+        <label>Ch
+          <select id="outCh"></select>
+        </label>
 
-      <label class="small minui-hidden" title="Off = send absolute BPM (mapped to 0–127). On = send incremental +/− steps (often maps better to Ableton tempo).">
-        <input id="bpmRelative" type="checkbox" />
-        Relative encoder mode
-      </label>
-
-      <span class="small mono minui-hidden">sent:</span>
-      <span class="pill small mono minui-hidden" id="bpmSent">—</span>
-
-      <span class="small muted right minui-hidden">
-        CC for BPM: <span class="mono" id="bpmCcLabel"></span>
-      </span>
+        <span class="pill small mono" id="status">Not connected</span>
+      </div>
     </div>
 
-    <div class="small muted minui-hidden" style="margin-top:6px;">
-      Absolute mode: sends CC value derived from BPM (formula in code). Relative mode: sends +/− pulses.
+    <div class="panel minui-flatcard">
+      <!-- Removed section title text “Toggles (latching)” -->
+      <div class="grid" id="toggles"></div>
     </div>
-  </div>
 
-  <div class="panel minui-flatcard">
-    <div class="panel-title">Toggles (latching)</div>
-    <div class="grid" id="toggles"></div>
-  </div>
-
-  <div class="panel minui-flatcard">
-    <div class="panel-title">Momentary (one-shot)</div>
-    <div class="grid" id="momentaries"></div>
-  </div>
-
-  <div class="panel minui-flatcard">
-    <div class="panel-title">Extra Sliders</div>
-    <div class="grid" id="sliders"></div>
-  </div>
-
-  <div class="panel minui-flatcard minui-hidden">
-    <div class="panel-title">MIDI Monitor (incoming)</div>
-    <div class="row minui-row small muted" style="margin-bottom:6px;">
-      <span>Shows MIDI IN from Ableton (or anything connected to the selected input).</span>
-      <button id="clearLog" class="right">Clear</button>
+    <div class="panel minui-flatcard">
+      <!-- Removed section title text “Momentary (one-shot)” -->
+      <div class="grid" id="momentaries"></div>
     </div>
-    <div id="log" class="log mono"></div>
-  </div>
 
-  <script>
-    /**********************************************************************
-     * MAPPING CONSTANTS (edit these to match your Ableton mapping needs)
-     **********************************************************************/
-    const MIDI_CHANNEL = 0; // 0-based. Channel 1 = 0. (Default requested)
+    <div class="panel minui-flatcard">
+      <!-- Removed section title text “Knobs” -->
+      <div class="grid knobs-row" id="sliders"></div>
+    </div>
 
-    // CC numbers (0–127)
-    const BPM_CC = 14;
+    <script>
+      /**********************************************************************
+       * MAPPING CONSTANTS (UNCHANGED)
+       **********************************************************************/
+      const MIDI_CHANNEL = 0;
 
-    const TOGGLE_CCS = [20, 21, 22, 23, 24];   // 5 toggles
-    const SLIDER_CCS = [30, 31, 32, 33, 34];   // 5 sliders
+      const TOGGLE_CCS = [20, 21, 22, 23, 24];
+      const SLIDER_CCS = [30, 31, 32, 33, 34];
 
-    // Momentary buttons: using MIDI NOTE messages (consistent choice).
-    // Notes are 0–127. Velocity is fixed below.
-    const MOMENTARY_NOTES = [60, 61, 62, 63, 64]; // C4..E4 by default
-    const MOMENTARY_VELOCITY = 100;
-    const MOMENTARY_NOTE_OFF_MS = 40;
+      const MOMENTARY_NOTES = [60, 61, 62, 63, 64];
+      const MOMENTARY_VELOCITY = 100;
+      const MOMENTARY_NOTE_OFF_MS = 40;
 
-    /**********************************************************************
-     * BPM -> CC formula (Absolute mode)
-     **********************************************************************/
-    const BPM_MIN = 20;
-    const BPM_MAX = 300;
+      function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+      /**********************************************************************
+       * Web MIDI (OUTPUT ONLY)
+       **********************************************************************/
+      let midiAccess = null;
+      let midiOut = null;
 
-    function bpmToCc(bpm) {
-      const b = clamp(bpm, BPM_MIN, BPM_MAX);
-      const cc = Math.round(((b - BPM_MIN) / (BPM_MAX - BPM_MIN)) * 127);
-      return clamp(cc, 0, 127);
-    }
+      // runtime-selected channel (defaults to MIDI_CHANNEL)
+      let selectedOutChannel = MIDI_CHANNEL; // 0–15
 
-    // Relative encoder pulse convention (common):
-    // value 1 = +1 step, value 127 = -1 step (two's complement)
-    const REL_PLUS = 1;
-    const REL_MINUS = 127;
-
-    /**********************************************************************
-     * Web MIDI
-     **********************************************************************/
-    let midiAccess = null;
-    let midiOut = null;
-    let midiIn = null;
-
-    const els = {
-      midiOut: document.getElementById("midiOut"),
-      midiIn: document.getElementById("midiIn"),
-      status: document.getElementById("status"),
-      chanLabel: document.getElementById("chanLabel"),
-      bpm: document.getElementById("bpm"),
-      bpmMinus10: document.getElementById("bpmMinus10"),
-      bpmPlus10: document.getElementById("bpmPlus10"),
-      bpmRelative: document.getElementById("bpmRelative"),
-      bpmSent: document.getElementById("bpmSent"),
-      bpmCcLabel: document.getElementById("bpmCcLabel"),
-      toggles: document.getElementById("toggles"),
-      momentaries: document.getElementById("momentaries"),
-      sliders: document.getElementById("sliders"),
-      log: document.getElementById("log"),
-      clearLog: document.getElementById("clearLog"),
-    };
-
-    els.chanLabel.textContent = (MIDI_CHANNEL + 1);
-    els.bpmCcLabel.textContent = BPM_CC;
-
-    function setStatus(text, isWarn=false) {
-      els.status.textContent = text;
-      els.status.classList.toggle("warn", !!isWarn);
-    }
-
-    function listPorts() {
-      // Populate dropdowns. Default to "port 1" (first item) if possible.
-      els.midiOut.innerHTML = "";
-      els.midiIn.innerHTML = "";
-
-      const outs = Array.from(midiAccess.outputs.values());
-      const ins  = Array.from(midiAccess.inputs.values());
-
-      outs.forEach((port, idx) => {
-        const opt = document.createElement("option");
-        opt.value = port.id;
-        opt.textContent = `${idx + 1}: ${port.name || "Unnamed Output"}`;
-        els.midiOut.appendChild(opt);
-      });
-
-      ins.forEach((port, idx) => {
-        const opt = document.createElement("option");
-        opt.value = port.id;
-        opt.textContent = `${idx + 1}: ${port.name || "Unnamed Input"}`;
-        els.midiIn.appendChild(opt);
-      });
-
-      if (outs.length === 0) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No MIDI outputs found";
-        els.midiOut.appendChild(opt);
-      } else {
-        els.midiOut.selectedIndex = 0; // default port 1
-        selectOutput(els.midiOut.value);
-      }
-
-      if (ins.length === 0) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No MIDI inputs found";
-        els.midiIn.appendChild(opt);
-      } else {
-        els.midiIn.selectedIndex = 0; // default port 1
-        selectInput(els.midiIn.value);
-      }
-    }
-
-    function selectOutput(id) {
-      midiOut = midiAccess.outputs.get(id) || null;
-      refreshConnectionStatus();
-    }
-
-    function selectInput(id) {
-      // Detach old handler
-      if (midiIn) midiIn.onmidimessage = null;
-
-      midiIn = midiAccess.inputs.get(id) || null;
-      if (midiIn) {
-        midiIn.onmidimessage = onMidiMessage;
-      }
-      refreshConnectionStatus();
-    }
-
-    function refreshConnectionStatus() {
-      const outName = midiOut ? (midiOut.name || "Output") : "—";
-      const inName  = midiIn  ? (midiIn.name  || "Input")  : "—";
-      if (midiOut || midiIn) {
-        setStatus(`OUT: ${outName} | IN: ${inName}`);
-      } else {
-        setStatus("Not connected", true);
-      }
-    }
-
-    // MIDI send helpers (CC + Note)
-    function sendCC(ccNumber, value) {
-      if (!midiOut) return;
-      const v = clamp(Math.round(value), 0, 127);
-      const status = 0xB0 | (MIDI_CHANNEL & 0x0F);
-      midiOut.send([status, ccNumber & 0x7F, v]);
-    }
-
-    function sendNoteOn(note, velocity) {
-      if (!midiOut) return;
-      const status = 0x90 | (MIDI_CHANNEL & 0x0F);
-      midiOut.send([status, note & 0x7F, clamp(velocity, 0, 127)]);
-    }
-
-    function sendNoteOff(note, velocity=0) {
-      if (!midiOut) return;
-      const status = 0x80 | (MIDI_CHANNEL & 0x0F);
-      midiOut.send([status, note & 0x7F, clamp(velocity, 0, 127)]);
-    }
-
-    // Incoming MIDI monitor
-    function fmt2(n) { return String(n).padStart(2, "0"); }
-    function nowStamp() {
-      const d = new Date();
-      return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}:${fmt2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}`;
-    }
-
-    function decodeMessage(data) {
-      const status = data[0];
-      const type = status & 0xF0;
-      const ch = (status & 0x0F) + 1;
-      const d1 = data[1];
-      const d2 = data[2];
-
-      if (type === 0xB0) return `CC  ch${ch}  cc=${d1}  val=${d2}`;
-      if (type === 0x90) return `NOTE ON  ch${ch}  note=${d1}  vel=${d2}`;
-      if (type === 0x80) return `NOTE OFF ch${ch}  note=${d1}  vel=${d2}`;
-      if (type === 0xE0) {
-        const bend = ((d2 << 7) | d1) - 8192;
-        return `PITCHBEND ch${ch}  ${bend}`;
-      }
-      if (type === 0xC0) return `PROG CHG ch${ch}  program=${d1}`;
-      if (type === 0xD0) return `CH PRESS ch${ch}  val=${d1}`;
-      if (type === 0xA0) return `POLY PRESS ch${ch}  note=${d1} val=${d2}`;
-      return `0x${status.toString(16)}  ${data.join(" ")}`;
-    }
-
-    function onMidiMessage(e) {
-      const data = Array.from(e.data || []);
-      const line = `${nowStamp()}  ${decodeMessage(data)}\n`;
-      els.log.textContent += line;
-      els.log.scrollTop = els.log.scrollHeight;
-    }
-
-    /**********************************************************************
-     * Inline rename via long-press (500ms)
-     * - Long press triggers rename mode by swapping label for an inline input
-     * - Commit on Enter or blur
-     * - Empty => revert to default label
-     * - Long-press must not interfere with normal click / MIDI
-     **********************************************************************/
-    const LONG_PRESS_MS = 500;
-    /**********************************************************************
-     * Uniform width per category (toggles / momentaries / slider labels)
-     * - All buttons in a category match the width of the widest label
-     * - Updates instantly (no animation) and works during inline rename
-     **********************************************************************/
-    const WIDTH_GROUP = {
-      TOGGLES: "toggles",
-      MOMENTARIES: "momentaries",
-      SLIDERS: "sliders",
-    };
-
-    const _widthMeasurers = new Map();
-
-    function _getMeasurer(groupKey, sampleBtn) {
-      let m = _widthMeasurers.get(groupKey);
-      if (m) return m;
-
-      m = document.createElement("button");
-      // Match the visual button sizing rules (font/padding/border) via className
-      // Strip stateful classes like "on" that don't affect width but could affect colors.
-      const cls = (sampleBtn && sampleBtn.className) ? sampleBtn.className.replace(/\bon\b/g, "").trim() : "";
-      m.className = cls;
-      m.type = "button";
-      m.setAttribute("aria-hidden", "true");
-      m.tabIndex = -1;
-      m.style.position = "absolute";
-      m.style.left = "-9999px";
-      m.style.top = "-9999px";
-      m.style.visibility = "hidden";
-      m.style.pointerEvents = "none";
-      m.style.width = "auto";
-      document.body.appendChild(m);
-
-      _widthMeasurers.set(groupKey, m);
-      return m;
-    }
-
-    function _labelTextForMeasure(btn) {
-      if (!btn) return "";
-      if (btn.dataset.renaming === "1") {
-        const inp = btn.querySelector("input.rename-inline");
-        return (inp && typeof inp.value === "string") ? inp.value : "";
-      }
-      return btn.textContent || btn.dataset.defaultLabel || "";
-    }
-
-    function _buttonsForGroup(groupKey) {
-      if (groupKey === WIDTH_GROUP.TOGGLES) {
-        return Array.from(els.toggles.querySelectorAll("button.toggle"));
-      }
-      if (groupKey === WIDTH_GROUP.MOMENTARIES) {
-        return Array.from(els.momentaries.querySelectorAll("button"));
-      }
-      if (groupKey === WIDTH_GROUP.SLIDERS) {
-        return Array.from(els.sliders.querySelectorAll("button"));
-      }
-      return [];
-    }
-
-    function syncCategoryButtonWidths(groupKey) {
-      const btns = _buttonsForGroup(groupKey);
-      if (!btns.length) return;
-
-      // Reset widths first so shrinking works when labels get shorter
-      btns.forEach(b => { b.style.width = "auto"; });
-
-      const measurer = _getMeasurer(groupKey, btns[0]);
-      let maxW = 0;
-
-      for (const b of btns) {
-        measurer.textContent = _labelTextForMeasure(b);
-        const w = measurer.getBoundingClientRect().width;
-        if (w > maxW) maxW = w;
-      }
-
-      // Apply uniform width (rounded to avoid subpixel jitter)
-      const px = `${Math.ceil(maxW)}px`;
-      btns.forEach(b => { b.style.width = px; });
-    }
-
-    function syncAllCategoryButtonWidths() {
-      syncCategoryButtonWidths(WIDTH_GROUP.TOGGLES);
-      syncCategoryButtonWidths(WIDTH_GROUP.MOMENTARIES);
-      syncCategoryButtonWidths(WIDTH_GROUP.SLIDERS);
-    }
-
-
-    function setButtonLabel(btn, text) {
-      // Only used when NOT in rename mode
-      btn.textContent = text;
-    }
-
-    function enterRenameMode(btn) {
-      if (btn.dataset.renaming === "1") return;
-
-      const defaultLabel = btn.dataset.defaultLabel || btn.textContent || "";
-      const currentLabel = btn.textContent || defaultLabel;
-
-      btn.dataset.renaming = "1";
-
-      // Replace content with inline input
-      btn.textContent = "";
-      const inp = document.createElement("input");
-      inp.type = "text";
-      inp.className = "rename-inline";
-      inp.value = currentLabel;
-      inp.setAttribute("aria-label", "Rename");
-      btn.appendChild(inp);
-
-      // Keep widths uniform while editing (instant, no animation)
-      const groupKey = btn.dataset.widthGroup || "";
-      if (groupKey) {
-        inp.addEventListener("input", () => syncCategoryButtonWidths(groupKey));
-        syncCategoryButtonWidths(groupKey);
-      }
-
-      // Autofocus + select
-      inp.focus({ preventScroll: true });
-      try { inp.select(); } catch (_) {}
-
-      const commit = () => {
-        const raw = (inp.value || "").trim();
-        const next = raw.length ? raw : (btn.dataset.defaultLabel || defaultLabel);
-        btn.dataset.renaming = "0";
-        setButtonLabel(btn, next);
-        const g = btn.dataset.widthGroup || "";
-        if (g) syncCategoryButtonWidths(g);
+      const els = {
+        midiOut: document.getElementById("midiOut"),
+        outCh: document.getElementById("outCh"),
+        status: document.getElementById("status"),
+        toggles: document.getElementById("toggles"),
+        momentaries: document.getElementById("momentaries"),
+        sliders: document.getElementById("sliders"),
       };
 
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          commit();
-          btn.blur();
-        } else if (e.key === "Escape") {
-          // Escape cancels edit, restoring current (or default if somehow empty)
-          e.preventDefault();
-          inp.value = currentLabel;
-          commit();
-          btn.blur();
+      function setStatus(text, isWarn=false) {
+        els.status.textContent = text;
+        els.status.classList.toggle("warn", !!isWarn);
+      }
+
+      function refreshConnectionStatus() {
+        if (midiOut) setStatus("Connected");
+        else setStatus("Not connected", true);
+      }
+
+      function resetOutChannelToDefault() {
+        // Requirement: always default to Channel 1 (0) whenever an output/bus is chosen.
+        selectedOutChannel = 0;
+        if (els.outCh) els.outCh.value = "0";
+      }
+
+      function populateOutChannels() {
+        els.outCh.innerHTML = "";
+        for (let ch = 1; ch <= 16; ch++) {
+          const opt = document.createElement("option");
+          opt.value = String(ch - 1);      // store 0–15
+          opt.textContent = String(ch);    // display 1–16
+          els.outCh.appendChild(opt);
         }
-      });
+        resetOutChannelToDefault();
+      }
 
-      inp.addEventListener("blur", () => {
-        commit();
-      }, { once: true });
-    }
+      function listOutputs() {
+        els.midiOut.innerHTML = "";
+        const outs = Array.from(midiAccess.outputs.values());
 
-    function attachLongPressRename(btn) {
-      let t = null;
-      let startX = 0;
-      let startY = 0;
-      let moved = false;
-
-      const clear = () => {
-        if (t) {
-          clearTimeout(t);
-          t = null;
-        }
-      };
-
-      const onDown = (e) => {
-        if (btn.dataset.renaming === "1") return;
-
-        moved = false;
-
-        // Pointer coordinates (works for mouse/touch/pen)
-        const pt = (e.touches && e.touches[0]) ? e.touches[0] : e;
-        startX = pt.clientX || 0;
-        startY = pt.clientY || 0;
-
-        clear();
-        t = setTimeout(() => {
-          t = null;
-          // Suppress the click that would otherwise happen on release
-          btn.dataset.suppressClick = "1";
-          enterRenameMode(btn);
-        }, LONG_PRESS_MS);
-      };
-
-      const onMove = (e) => {
-        if (!t) return;
-        const pt = (e.touches && e.touches[0]) ? e.touches[0] : e;
-        const x = pt.clientX || 0;
-        const y = pt.clientY || 0;
-        const dx = x - startX;
-        const dy = y - startY;
-        if ((dx*dx + dy*dy) > (8*8)) { // tiny movement cancels long-press
-          moved = true;
-          clear();
-        }
-      };
-
-      const onUp = () => {
-        // If it was a short press, let normal click behavior proceed
-        clear();
-      };
-
-      btn.addEventListener("pointerdown", onDown);
-      btn.addEventListener("pointermove", onMove);
-      btn.addEventListener("pointerup", onUp);
-      btn.addEventListener("pointercancel", onUp);
-      btn.addEventListener("lostpointercapture", onUp);
-
-      // Also support touch events on browsers that may not fully pointer-map
-      btn.addEventListener("touchstart", onDown, { passive: true });
-      btn.addEventListener("touchmove", onMove, { passive: true });
-      btn.addEventListener("touchend", onUp, { passive: true });
-      btn.addEventListener("touchcancel", onUp, { passive: true });
-
-      // Capture click to suppress after a long-press (without touching existing click logic)
-      btn.addEventListener("click", (e) => {
-        if (btn.dataset.renaming === "1") {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-        if (btn.dataset.suppressClick === "1") {
-          btn.dataset.suppressClick = "0";
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-      }, true);
-    }
-
-    /**********************************************************************
-     * UI builders: 5 toggles, 5 momentaries, 5 sliders
-     * (Rename is now inline via long-press; no separate inputs.)
-     **********************************************************************/
-    function buildToggles() {
-      els.toggles.innerHTML = "";
-      for (let i = 0; i < 5; i++) {
-        const btn = document.createElement("button");
-        btn.className = "toggle";
-        btn.dataset.widthGroup = WIDTH_GROUP.TOGGLES;
-        btn.textContent = `Toggle ${i + 1}`;
-        btn.dataset.defaultLabel = `Toggle ${i + 1}`;
-        btn.dataset.on = "0";
-
-        attachLongPressRename(btn);
-
-        const cc = TOGGLE_CCS[i];
-
-        btn.addEventListener("click", () => {
-          const isOn = btn.dataset.on === "1";
-          const next = !isOn;
-          btn.dataset.on = next ? "1" : "0";
-          btn.classList.toggle("on", next);
-
-          // ON=127, OFF=0
-          sendCC(cc, next ? 127 : 0);
+        outs.forEach((port, idx) => {
+          const opt = document.createElement("option");
+          opt.value = port.id;
+          opt.textContent = `${idx + 1}: ${port.name || "Unnamed Output"}`;
+          els.midiOut.appendChild(opt);
         });
 
-        const meta = document.createElement("span");
-        meta.className = "small muted mono";
-        meta.textContent = `CC ${cc}`;
-
-        els.toggles.appendChild(btn);
-        els.toggles.appendChild(meta);
+        if (outs.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No MIDI outputs found";
+          els.midiOut.appendChild(opt);
+          midiOut = null;
+          refreshConnectionStatus();
+        } else {
+          els.midiOut.selectedIndex = 0;
+          // bus chosen (auto-connect) => force channel 1 default
+          resetOutChannelToDefault();
+          selectOutput(els.midiOut.value);
+        }
       }
-    }
 
-    function buildMomentaries() {
-      els.momentaries.innerHTML = "";
-      for (let i = 0; i < 5; i++) {
-        const btn = document.createElement("button");
-        btn.dataset.widthGroup = WIDTH_GROUP.MOMENTARIES;
-        btn.textContent = `Shot ${i + 1}`;
-        btn.dataset.defaultLabel = `Shot ${i + 1}`;
-
-        attachLongPressRename(btn);
-
-        const note = MOMENTARY_NOTES[i];
-
-        btn.addEventListener("click", () => {
-          sendNoteOn(note, MOMENTARY_VELOCITY);
-          setTimeout(() => sendNoteOff(note, 0), MOMENTARY_NOTE_OFF_MS);
-        });
-
-        const meta = document.createElement("span");
-        meta.className = "small muted mono";
-        meta.textContent = `NOTE ${note}`;
-
-        els.momentaries.appendChild(btn);
-        els.momentaries.appendChild(meta);
+      function selectOutput(id) {
+        midiOut = midiAccess.outputs.get(id) || null;
+        refreshConnectionStatus();
       }
-    }
 
-    function buildSliders() {
-      els.sliders.innerHTML = "";
-      for (let i = 0; i < 5; i++) {
-        const slider = document.createElement("input");
-        slider.type = "range";
-        slider.min = "0";
-        slider.max = "127";
-        slider.step = "1";
-        slider.value = "0";
+      function sendCC(ccNumber, value) {
+        if (!midiOut) return;
+        const v = clamp(Math.round(value), 0, 127);
+        const status = 0xB0 | (selectedOutChannel & 0x0F);
+        midiOut.send([status, ccNumber & 0x7F, v]);
+      }
 
-        const labelBtn = document.createElement("button");
-        labelBtn.dataset.widthGroup = WIDTH_GROUP.SLIDERS;
-        labelBtn.textContent = `Slider ${i + 1}`;
-        labelBtn.dataset.defaultLabel = `Slider ${i + 1}`;
-        labelBtn.style.cursor = "default";
+      function sendNoteOn(note, velocity) {
+        if (!midiOut) return;
+        const status = 0x90 | (selectedOutChannel & 0x0F);
+        midiOut.send([status, note & 0x7F, clamp(velocity, 0, 127)]);
+      }
 
-        attachLongPressRename(labelBtn);
+      function sendNoteOff(note, velocity=0) {
+        if (!midiOut) return;
+        const status = 0x80 | (selectedOutChannel & 0x0F);
+        midiOut.send([status, note & 0x7F, clamp(velocity, 0, 127)]);
+      }
 
-        const cc = SLIDER_CCS[i];
-        const meta = document.createElement("span");
-        meta.className = "small muted mono";
-        meta.textContent = `CC ${cc}`;
+      /**********************************************************************
+       * LONG-PRESS INLINE RENAME (KEEP SYSTEM, RESTORE FOR BUTTONS)
+       **********************************************************************/
+      const KNOB_LABELS_KEY = "midicontrol_knob_labels_v1";
+      const TOGGLE_LABELS_KEY = "midicontrol_toggle_labels_v1";
+      const SHOT_LABELS_KEY = "midicontrol_shot_labels_v1";
+      const LONG_PRESS_MS = 450;
 
-        // Smooth-feeling sending: rAF throttle (unchanged)
-        let pending = false;
-        let lastVal = 0;
-        slider.addEventListener("input", () => {
-          lastVal = clamp(parseInt(slider.value, 10) || 0, 0, 127);
-          if (!pending) {
-            pending = true;
-            requestAnimationFrame(() => {
-              pending = false;
-              sendCC(cc, lastVal);
-            });
+      function loadLabels(key, fallbackArray) {
+        try {
+          const raw = localStorage.getItem(key);
+          const parsed = raw ? JSON.parse(raw) : null;
+          if (Array.isArray(parsed) && parsed.length === fallbackArray.length) return parsed;
+        } catch (_) {}
+        return fallbackArray.slice();
+      }
+
+      function saveLabels(key, labels) {
+        try { localStorage.setItem(key, JSON.stringify(labels)); } catch (_) {}
+      }
+
+      /**
+       * Attach long-press inline rename to an element.
+       * IMPORTANT: prevents the element's normal click handler from firing
+       * when a long-press rename was triggered.
+       */
+      function attachLongPressRename(targetEl, getText, setText) {
+        let t = null;
+        let pressed = false;
+        let didLongPress = false;
+
+        const clear = () => {
+          if (t) { clearTimeout(t); t = null; }
+          pressed = false;
+        };
+
+        const openEditor = () => {
+          const current = getText();
+
+          // mark that we triggered rename (so we can suppress click)
+          didLongPress = true;
+
+          const input = document.createElement("input");
+          input.className = "rename-inline";
+          input.type = "text";
+          input.value = current;
+
+          targetEl.textContent = "";
+          targetEl.appendChild(input);
+
+          const commit = () => {
+            const next = (input.value || "").trim() || current;
+            setText(next);
+            targetEl.textContent = next;
+          };
+
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") input.blur();
+            if (e.key === "Escape") {
+              targetEl.textContent = current;
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          });
+
+          input.addEventListener("blur", commit);
+          input.focus();
+          input.select();
+        };
+
+        // Suppress the normal click that can occur after long-press editing starts
+        targetEl.addEventListener("click", (e) => {
+          if (didLongPress) {
+            didLongPress = false;
+            e.preventDefault();
+            e.stopImmediatePropagation();
           }
+        }, true); // capture so we intercept before existing click handlers
+
+        targetEl.addEventListener("pointerdown", () => {
+          clear();
+          pressed = true;
+          didLongPress = false;
+          t = setTimeout(() => {
+            if (!pressed) return;
+            openEditor();
+          }, LONG_PRESS_MS);
         });
 
-        els.sliders.appendChild(labelBtn);
-        els.sliders.appendChild(meta);
+        targetEl.addEventListener("pointerup", clear);
+        targetEl.addEventListener("pointercancel", clear);
+        targetEl.addEventListener("pointerleave", clear);
 
-        // Put slider into one cell (no rename box anymore)
-        const cell = document.createElement("div");
-        cell.className = "row";
-        cell.appendChild(slider);
-
-        els.sliders.appendChild(cell);
-      }
-    }
-
-    /**********************************************************************
-     * BPM control behavior (unchanged)
-     **********************************************************************/
-    let typingMode = false;
-    let lastCommittedBpm = clamp(parseInt(els.bpm.value, 10) || 120, BPM_MIN, BPM_MAX);
-
-    function updateBpmDisplaySent(text) {
-      els.bpmSent.textContent = text;
-    }
-
-    function sendBpmAbsolute(bpm) {
-      const b = clamp(bpm, BPM_MIN, BPM_MAX);
-      const ccVal = bpmToCc(b);
-      sendCC(BPM_CC, ccVal);
-      updateBpmDisplaySent(`CC${BPM_CC}=${ccVal} (from BPM ${b})`);
-    }
-
-    function sendBpmRelativeSteps(delta) {
-      const steps = Math.abs(delta);
-      const dirVal = delta > 0 ? REL_PLUS : REL_MINUS;
-
-      const maxPulses = 48;
-      const pulses = Math.min(steps, maxPulses);
-
-      for (let i = 0; i < pulses; i++) sendCC(BPM_CC, dirVal);
-
-      updateBpmDisplaySent(`CC${BPM_CC} ${delta > 0 ? "+" : "−"}${steps} (sent ${pulses} pulses)`);
-    }
-
-    function commitBpm(nextBpm) {
-      const b = clamp(parseInt(nextBpm, 10) || lastCommittedBpm, BPM_MIN, BPM_MAX);
-      els.bpm.value = String(b);
-
-      const relative = els.bpmRelative.checked;
-      if (!relative) {
-        sendBpmAbsolute(b);
-      } else {
-        const delta = b - lastCommittedBpm;
-        if (delta !== 0) sendBpmRelativeSteps(delta);
-        else updateBpmDisplaySent(`(no change)`);
+        targetEl.addEventListener("contextmenu", (e) => e.preventDefault());
       }
 
-      lastCommittedBpm = b;
-    }
+      /**********************************************************************
+       * UI BUILDERS (MIDI LOGIC UNCHANGED)
+       **********************************************************************/
+      function buildToggles() {
+        els.toggles.innerHTML = "";
 
-    els.bpm.addEventListener("keydown", (e) => {
-      typingMode = true;
-      if (e.key === "Enter") {
-        e.preventDefault();
-        typingMode = false;
-        commitBpm(els.bpm.value);
-        els.bpm.blur();
-      }
-    });
+        const labels = loadLabels(
+          TOGGLE_LABELS_KEY,
+          ["Toggle 1", "Toggle 2", "Toggle 3", "Toggle 4", "Toggle 5"]
+        );
 
-    els.bpm.addEventListener("blur", () => {
-      if (typingMode) {
-        typingMode = false;
-        commitBpm(els.bpm.value);
-      }
-    });
+        for (let i = 0; i < 5; i++) {
+          const btn = document.createElement("button");
+          btn.className = "toggle";
+          btn.textContent = labels[i];
+          btn.dataset.on = "0";
 
-    els.bpm.addEventListener("input", () => {
-      if (!typingMode) {
-        commitBpm(els.bpm.value);
-      }
-    });
+          const cc = TOGGLE_CCS[i];
 
-    els.bpmMinus10.addEventListener("click", () => {
-      typingMode = false;
-      const b = clamp((parseInt(els.bpm.value, 10) || lastCommittedBpm) - 10, BPM_MIN, BPM_MAX);
-      commitBpm(b);
-    });
-    els.bpmPlus10.addEventListener("click", () => {
-      typingMode = false;
-      const b = clamp((parseInt(els.bpm.value, 10) || lastCommittedBpm) + 10, BPM_MIN, BPM_MAX);
-      commitBpm(b);
-    });
+          // Restore long-press rename on the button itself
+          attachLongPressRename(
+            btn,
+            () => labels[i],
+            (next) => {
+              labels[i] = next;
+              saveLabels(TOGGLE_LABELS_KEY, labels);
+            }
+          );
 
-    els.bpmRelative.addEventListener("change", () => {
-      updateBpmDisplaySent("—");
-    });
+          // Latching behavior unchanged
+          btn.addEventListener("click", () => {
+            const isOn = btn.dataset.on === "1";
+            const next = !isOn;
+            btn.dataset.on = next ? "1" : "0";
+            btn.classList.toggle("on", next);
+            sendCC(cc, next ? 127 : 0);
+          });
 
-    /**********************************************************************
-     * Init
-     **********************************************************************/
-    els.clearLog.addEventListener("click", () => { els.log.textContent = ""; });
-
-    els.midiOut.addEventListener("change", () => selectOutput(els.midiOut.value));
-    els.midiIn.addEventListener("change", () => selectInput(els.midiIn.value));
-
-    buildToggles();
-    buildMomentaries();
-    buildSliders();
-    // Ensure uniform widths after initial render
-    requestAnimationFrame(syncAllCategoryButtonWidths);
-    updateBpmDisplaySent("—");
-
-    /**********************************************************************
-     * BroadcastChannel: external randomize trigger (toggles + sliders)
-     **********************************************************************/
-    const randomizeChannel = new BroadcastChannel('randomize_channel');
-    randomizeChannel.onmessage = (event) => {
-      if (event && event.data && event.data.type === 'randomize_all') {
-        console.log("Message 'randomize_all' reçu !");
-
-        // A) Randomize the five toggles (use existing click behavior)
-        const toggleButtons = Array.from(els.toggles.querySelectorAll("button.toggle"));
-        for (const btn of toggleButtons) {
-          const targetOn = Math.random() < 0.5;
-          const isOn = btn.dataset.on === "1";
-          if (targetOn !== isOn) btn.click();
-        }
-
-        // B) Randomize the five sliders (use existing input behavior)
-        const sliderInputs = Array.from(els.sliders.querySelectorAll('input[type="range"]'));
-        for (const slider of sliderInputs) {
-          const v = Math.floor(Math.random() * 128);
-          slider.value = String(v);
-          slider.dispatchEvent(new Event("input", { bubbles: true }));
+          els.toggles.appendChild(btn);
         }
       }
-    };
 
-    (async function initMIDI() {
-      if (!navigator.requestMIDIAccess) {
-        setStatus("Web MIDI not supported in this browser (use Chrome/Edge).", true);
-        return;
+      function buildMomentaries() {
+        els.momentaries.innerHTML = "";
+
+        const labels = loadLabels(
+          SHOT_LABELS_KEY,
+          ["Shot 1", "Shot 2", "Shot 3", "Shot 4", "Shot 5"]
+        );
+
+        for (let i = 0; i < 5; i++) {
+          const btn = document.createElement("button");
+          btn.textContent = labels[i];
+
+          const note = MOMENTARY_NOTES[i];
+
+          // Restore long-press rename on the button itself
+          attachLongPressRename(
+            btn,
+            () => labels[i],
+            (next) => {
+              labels[i] = next;
+              saveLabels(SHOT_LABELS_KEY, labels);
+            }
+          );
+
+          // Momentary logic unchanged
+          btn.addEventListener("click", () => {
+            sendNoteOn(note, MOMENTARY_VELOCITY);
+            setTimeout(() => sendNoteOff(note, 0), MOMENTARY_NOTE_OFF_MS);
+          });
+
+          els.momentaries.appendChild(btn);
+        }
       }
 
-      try {
-        midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-      } catch (err) {
-        setStatus("MIDI access denied / unavailable.", true);
-        return;
+      function buildSliders() {
+        els.sliders.innerHTML = "";
+        els.sliders.classList.add("knobs-row");
+
+        const labels = loadLabels(
+          KNOB_LABELS_KEY,
+          ["Knob 1", "Knob 2", "Knob 3", "Knob 4", "Knob 5"]
+        );
+
+        for (let i = 0; i < 5; i++) {
+          const wrap = document.createElement("div");
+          wrap.className = "knob";
+
+          const labelWrap = document.createElement("div");
+          labelWrap.className = "knob-label";
+
+          const labelBtn = document.createElement("button");
+          labelBtn.type = "button";
+          labelBtn.className = "knob-label-btn";
+          labelBtn.textContent = labels[i];
+
+          attachLongPressRename(
+            labelBtn,
+            () => labels[i],
+            (next) => {
+              labels[i] = next;
+              saveLabels(KNOB_LABELS_KEY, labels);
+            }
+          );
+
+          labelWrap.appendChild(labelBtn);
+
+          const slider = document.createElement("input");
+          slider.type = "range";
+          slider.min = "0";
+          slider.max = "127";
+          slider.step = "1";
+          slider.value = "0";
+
+          const cc = SLIDER_CCS[i];
+
+          let pending = false;
+          let lastVal = 0;
+
+          slider.addEventListener("input", () => {
+            lastVal = clamp(parseInt(slider.value, 10) || 0, 0, 127);
+            if (!pending) {
+              pending = true;
+              requestAnimationFrame(() => {
+                pending = false;
+                sendCC(cc, lastVal);
+              });
+            }
+          });
+
+          wrap.appendChild(labelWrap);
+          wrap.appendChild(slider);
+
+          els.sliders.appendChild(wrap);
+        }
       }
 
-      setStatus("MIDI ready (select ports)");
-      listPorts();
+      /**********************************************************************
+       * INIT
+       **********************************************************************/
+      els.midiOut.addEventListener("change", () => {
+        // bus chosen (manual) => force channel 1 default
+        resetOutChannelToDefault();
+        selectOutput(els.midiOut.value);
+      });
 
-      midiAccess.onstatechange = () => {
-        const prevOutId = els.midiOut.value;
-        const prevInId = els.midiIn.value;
-        listPorts();
+      // output channel selection
+      els.outCh.addEventListener("change", () => {
+        selectedOutChannel = clamp(parseInt(els.outCh.value, 10) || 0, 0, 15);
+      });
 
-        if (prevOutId && midiAccess.outputs.has(prevOutId)) {
-          els.midiOut.value = prevOutId;
-          selectOutput(prevOutId);
+      populateOutChannels();
+      buildToggles();
+      buildMomentaries();
+      buildSliders();
+
+      (async function initMIDI() {
+        if (!navigator.requestMIDIAccess) {
+          setStatus("Web MIDI not supported (use Chrome/Edge).", true);
+          return;
         }
-        if (prevInId && midiAccess.inputs.has(prevInId)) {
-          els.midiIn.value = prevInId;
-          selectInput(prevInId);
+
+        try {
+          midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+        } catch (err) {
+          setStatus("MIDI access denied / unavailable.", true);
+          return;
         }
-      };
-    })();
-  </script>
+
+        setStatus("MIDI ready");
+        listOutputs();
+
+        midiAccess.onstatechange = () => {
+          const prevOutId = els.midiOut.value;
+          listOutputs();
+
+          if (prevOutId && midiAccess.outputs.has(prevOutId)) {
+            els.midiOut.value = prevOutId;
+            selectOutput(prevOutId);
+          }
+        };
+      })();
+    </script>
   </div>
 </body>
 </html>

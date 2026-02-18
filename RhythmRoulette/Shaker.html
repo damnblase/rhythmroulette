@@ -15,7 +15,7 @@
 
     <!-- MIDI Out -->
     <div class="row minui-row minui-keep-output">
-      <label for="outputSel">MIDI Out</label>
+      <label for="outputSel">Output</label>
       <select id="outputSel" disabled></select>
 
       <label for="channelSel">Ch</label>
@@ -27,21 +27,18 @@
     <!-- REGENERATE -->
     <div class="row minui-row minui-keep-regen">
       <button id="regenBtn">Randomize Pattern</button>
-      <button id="panicBtn" class="minui-hidden">Panic</button>
     </div>
 
     <!-- NOTE DENSITY -->
     <div class="row minui-row minui-keep-density">
       <label for="density">Note Density</label>
       <input id="density" type="range" min="1" max="100" step="1" value="70" />
-      <span id="densityVal" class="minui-hidden">70%</span>
     </div>
 
     <!-- VELOCITY FLOOR -->
     <div class="row minui-row minui-keep-velfloor">
       <label for="velFloor">Velocity Floor</label>
       <input id="velFloor" type="range" min="27" max="127" step="1" value="45" />
-      <span id="velFloorVal" class="minui-hidden">45 → 127</span>
     </div>
 
     <div class="row minui-row minui-scope">
@@ -85,11 +82,8 @@
   const channelSel    = $("#channelSel");
   const midiStatus    = $('#midiStatus');
   const regenBtn      = $('#regenBtn');
-  const panicBtn      = $('#panicBtn');
   const density       = $('#density');
-  const densityVal    = $('#densityVal');
   const velFloor      = $('#velFloor');
-  const velFloorVal   = $('#velFloorVal');
 
   let midiAccess = null;
   let midiOut = null;
@@ -110,7 +104,7 @@
       updateOutputsSelect();
       outputSel.disabled = !midiOut;
       channelSel.disabled = !midiOut;
-      setStatus(midiOut ? 'MIDI ready' : 'No MIDI outputs');
+      setStatus(midiOut ? 'Connected' : 'No MIDI outputs');
     }catch(e){
       console.error(e);
       setStatus('MIDI permission denied');
@@ -217,10 +211,6 @@
   };
 
   regenBtn.addEventListener('click', regeneratePattern);
-  panicBtn.addEventListener('click', allNotesOff);
-
-  density.addEventListener('input', ()=> { if(densityVal) densityVal.textContent=`${density.value}%`; });
-  velFloor.addEventListener('input', ()=> { if(velFloorVal) velFloorVal.textContent=`${velFloor.value} → 127`; });
 
   regeneratePattern();
 
