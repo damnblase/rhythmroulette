@@ -6,6 +6,7 @@
   <title>ProgLooper — External-Ticker MIDI Chord Player (Minor Only + Jitter)</title>
   <link rel="stylesheet" href="./rr-ui.css">
   <script src="./rr-ui.js" defer></script>
+<style>#chLabel{display:none!important;}</style>
 </head>
 <body>
   <div class="wrap">
@@ -18,7 +19,7 @@
           <label for="midiCh">Ch</label>
           <select id="midiCh" aria-label="MIDI Channel"></select>
           <span id="midiStatus" class="pill">MIDI: —</span>
-          <span class="pill">Ch <span class="mono" id="chLabel">1</span> • Vel 96</span>
+          <span class="pill" style="display:none"><span class="mono" id="chLabel"></span></span>
         </div>
         <div class="divider"></div>
         <div class="row">
@@ -27,7 +28,7 @@
         </div>
         <div class="row">
           <button id="randKey" class="ghost">Randomize Key</button>
-          <label class="nowrap">Key (Minor only)</label>
+          <label class="nowrap">Key</label>
           <select id="keySelect"></select>
           <label class="nowrap">Source</label>
           <select id="keySource">
@@ -46,7 +47,7 @@
             <option value="8">8 beats</option>
             <option value="16">16 beats</option>
           </select>
-          <span class="pill" id="loopInfo">—</span>
+          <span class="pill" id="loopInfo" style="display:none">—</span>
         </div>
         <div class="row">
           <label class="nowrap keepLabel"><input type="checkbox" id="enableJitter" checked> Enable Jitter</label>

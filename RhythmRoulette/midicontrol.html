@@ -164,6 +164,10 @@
         sliders: document.getElementById("sliders"),
       };
 
+      // Cached UI element refs (for keeping UI in sync with outgoing CCs)
+      let toggleButtonEls = [];
+      let sliderInputEls = [];
+
       function setStatus(text, isWarn=false) {
         els.status.textContent = text;
         els.status.classList.toggle("warn", !!isWarn);
@@ -225,6 +229,20 @@
       function sendCC(ccNumber, value) {
         if (!midiOut) return;
         const v = clamp(Math.round(value), 0, 127);
+
+        // Keep UI in sync with the last value actually sent
+        const sliderIdx = SLIDER_CCS.indexOf(ccNumber);
+        if (sliderIdx !== -1 && sliderInputEls[sliderIdx]) {
+          // Update the thumb position without re-triggering the input handler
+          sliderInputEls[sliderIdx].value = String(v);
+        }
+        const toggleIdx = TOGGLE_CCS.indexOf(ccNumber);
+        if (toggleIdx !== -1 && toggleButtonEls[toggleIdx]) {
+          const on = v >= 64;
+          toggleButtonEls[toggleIdx].dataset.on = on ? "1" : "0";
+          toggleButtonEls[toggleIdx].classList.toggle("on", on);
+        }
+
         const status = 0xB0 | (selectedOutChannel & 0x0F);
         midiOut.send([status, ccNumber & 0x7F, v]);
       }
@@ -342,6 +360,7 @@
        **********************************************************************/
       function buildToggles() {
         els.toggles.innerHTML = "";
+        toggleButtonEls = [];
 
         const labels = loadLabels(
           TOGGLE_LABELS_KEY,
@@ -375,6 +394,7 @@
             sendCC(cc, next ? 127 : 0);
           });
 
+          toggleButtonEls.push(btn);
           els.toggles.appendChild(btn);
         }
       }
@@ -415,6 +435,7 @@
 
       function buildSliders() {
         els.sliders.innerHTML = "";
+        sliderInputEls = [];
         els.sliders.classList.add("knobs-row");
 
         const labels = loadLabels(
@@ -470,10 +491,53 @@
 
           wrap.appendChild(labelWrap);
           wrap.appendChild(slider);
+          sliderInputEls.push(slider);
 
           els.sliders.appendChild(wrap);
         }
       }
+
+      /**********************************************************************
+       * RANDOMIZE ALL (FROM CADENCE)
+       * Listens to Cadence.html BroadcastChannel 'randomize_channel'
+       * Message shape: { type: 'randomize_all' }
+       **********************************************************************/
+      const randomizeChannel = new BroadcastChannel('randomize_channel');
+
+      function randomInt0to127() {
+        return Math.floor(Math.random() * 128);
+      }
+
+      function randomizeAllControls() {
+        // Randomize toggles (latching)
+        const toggleButtons = Array.from(els.toggles.querySelectorAll('button.toggle'));
+        toggleButtons.forEach((btn, i) => {
+          const nextOn = Math.random() < 0.5;
+          btn.dataset.on = nextOn ? "1" : "0";
+          btn.classList.toggle("on", nextOn);
+          const cc = TOGGLE_CCS[i];
+          if (cc != null) sendCC(cc, nextOn ? 127 : 0);
+        });
+
+        // Randomize knobs (CC sliders)
+        const sliderInputs = Array.from(els.sliders.querySelectorAll('input[type="range"]'));
+        sliderInputs.forEach((slider) => {
+          slider.value = String(randomInt0to127());
+          // Trigger existing handler (sends CC via rAF throttling)
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      }
+
+      randomizeChannel.onmessage = (event) => {
+        const data = event && event.data ? event.data : null;
+        if (!data) return;
+
+        // Be permissive about message variants
+        const t = (data.type || "").toString();
+        if (t === "randomize_all" || t === "randomizeAll" || t === "randomize") {
+          randomizeAllControls();
+        }
+      };
 
       /**********************************************************************
        * INIT

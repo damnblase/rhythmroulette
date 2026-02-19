@@ -10,13 +10,7 @@
 
 <body>
   <div class="wrap minui-wrap">
-    <h1>HTML Metronome — Sample-Accurate 16th-Note Ticker</h1>
-
-    <div class="row minui-row">
-      <span class="note">Press <span class="kbd">Space</span> to Play/Stop. On Play, loop restarts from tick 0.</span>
-    </div>
-
-    <div class="row minui-row">
+<div class="row minui-row">
       <label for="mode">Mode</label>
       <select id="mode">
         <option value="internal-ticker">Internal Ticker</option>
@@ -30,13 +24,13 @@
       <button id="bpmMinus10" type="button">−10</button>
       <button id="bpmPlus10" type="button">+10</button>
       <button id="bpmRand" type="button">Random BPM</button>
-      <span class="note" id="tickMsNote"></span>
+      <span class="note" id="tickMsNote" style="display:none"></span>
     </div>
 
     <div class="row minui-row">
       <label for="swing">Swing</label>
       <input id="swing" type="range" min="0" max="100" step="1" value="0" />
-      <span id="swingVal" class="note">0 (≈ 0.0 ms)</span>
+      <span id="swingVal" class="note">0</span>
     </div>
 
     <div class="row minui-row">
@@ -52,7 +46,7 @@
     <div class="status" id="status">
       <div><strong>Status:</strong> <span id="playState">Stopped</span></div>
       <div><strong>Loop:</strong> <span id="tickOut">—</span> / 0..127 &nbsp; | &nbsp; <strong>Beat:</strong> <span id="beatOut">—</span> / 0..31 &nbsp; | &nbsp; <strong>Sub:</strong> <span id="subOut">—</span> / 0..3</div>
-      <div><strong>BPM:</strong> <span id="bpmOut">120</span> &nbsp; | &nbsp; <strong>Swing:</strong> <span id="swingOut">0 (≈ 0.0 ms)</span></div>
+      <div><strong>BPM:</strong> <span id="bpmOut">120</span> &nbsp; | &nbsp; <strong>Swing:</strong> <span id="swingOut">0</span></div>
       <div><strong>Channel:</strong> <span id="channelOut" class="note">internal-ticker</span></div>
     </div>
   </div>
@@ -140,12 +134,13 @@
   function updateDerivedUI() {
     const bpm = getBPM();
     const Tms = sixteenthMsAtBPM(bpm);
-    tickMsNote.textContent = `≈ ${Tms.toFixed(2)} ms per 16th`;
+    // UI-only: keep internal timing calculations unchanged, but do not display ms approximations
+    if (tickMsNote) tickMsNote.textContent = '';
     const pct = parseInt(swingInput.value, 10) || 0;
-    const S = swingMs(bpm, pct);
-    swingVal.textContent = `${pct} (≈ ${S.toFixed(1)} ms)`;
+    const S = swingMs(bpm, pct); // still computed for internal use (no behavior change)
+    swingVal.textContent = `${pct}`;
     bpmOut.textContent = String(bpm);
-    swingOut.textContent = swingVal.textContent;
+    swingOut.textContent = `${pct}`;
   }
 
   function flashLights(tickIndex) {
