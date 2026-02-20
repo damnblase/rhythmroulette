@@ -87,6 +87,40 @@
     return String(v);
   }
 
+  function normalizeButtons(doc) {
+    const buttons = Array.from(doc.querySelectorAll("button"));
+    buttons.forEach((btn) => {
+      if (btn.dataset.rrBtn === "1") return;
+      btn.dataset.rrBtn = "1";
+
+      const raw = (btn.textContent || "").trim();
+      const t = raw.toLowerCase();
+
+      if (t === "randomize pattern" || t === "randomize all" || t === "randomize") {
+        btn.textContent = "⟳";
+        btn.classList.add("rr-icon-btn");
+        btn.classList.add("rand-btn");
+        if (!btn.getAttribute("aria-label")) btn.setAttribute("aria-label", raw || "Randomize");
+        btn.title = raw || "Randomize";
+        return;
+      }
+
+      if (t === "simplify") {
+        btn.textContent = "Simp";
+        return;
+      }
+    });
+  }
+
+  function hideUnneededTextBlocks(doc) {
+    const status = Array.from(doc.querySelectorAll(".status"));
+    status.forEach((el) => {
+      if (el.dataset.rrHide === "1") return;
+      el.dataset.rrHide = "1";
+      el.classList.add("rr-hidden");
+    });
+  }
+
   function replaceRangeWithRadios(doc, range) {
     if (range.dataset.rrProcessed === "1") return;
     range.dataset.rrProcessed = "1";
@@ -222,6 +256,9 @@
     stackCheckboxLabels(doc);
 
     improveEmptySelects(doc);
+
+    normalizeButtons(doc);
+    hideUnneededTextBlocks(doc);
   }
 
   function hookDocument(doc) {

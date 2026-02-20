@@ -19,11 +19,10 @@
     </div>
 
     <div class="row minui-row">
-      <label for="bpm">BPM</label>
-      <input id="bpm" type="number" min="40" max="300" step="1" value="120" />
+      <input id="bpm" class="rr-bpm" type="number" min="40" max="300" step="1" value="120" aria-label="BPM" />
       <button id="bpmMinus10" type="button">−10</button>
       <button id="bpmPlus10" type="button">+10</button>
-      <button id="bpmRand" type="button">Random BPM</button>
+      <button id="bpmRand" class="rand-btn" type="button" title="Random BPM">⟳</button>
       <span class="note" id="tickMsNote" style="display:none"></span>
     </div>
 
@@ -37,7 +36,7 @@
       <div class="buttons">
         <button id="playBtn" title="Space toggles too">Play</button>
         <button id="stopBtn" title="Space toggles too">Stop</button>
-         <button id="randomizeAll">Randomize All</button>
+         <button id="randomizeAll" class="rand-btn" title="Randomize All">⟳</button>
       </div>
     </div>
 

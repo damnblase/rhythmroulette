@@ -152,6 +152,28 @@ input[type="text"],
   align-items: center !important;
 }
 
+.rr-bpm{
+  font-weight: 700 !important;
+  font-size: 28px !important;
+  width: 90px !important;
+}
+
+.rr-icon-btn{
+  font-weight: 700;
+  font-size: 18px;
+  padding: 8px 10px;
+  line-height: 1;
+  min-width: 42px;
+}
+
+.rr-hidden{
+  display:none !important;
+}
+
+.rand-btn {
+  font-size: 24px;
+}
+
 button{
   user-select: none !important;
   cursor: pointer !important;
@@ -161,6 +183,15 @@ button:hover{
 }
 button:active{
   transform: translateY(1px);
+}
+
+button:focus,
+button:focus-visible,
+select:focus,
+select:focus-visible,
+input:focus,
+input:focus-visible{
+  outline: none !important;
 }
 
 button.primary{
@@ -195,6 +226,44 @@ input[type="checkbox"]{
 }
 input[type="checkbox"]:checked{
   background: var(--rr-accent) !important;
+}
+
+.checkbox-label{
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 6px !important;
+  line-height: 1 !important;
+}
+.checkbox-label input[type="checkbox"]{
+  margin: 0 !important;
+}
+
+label,
+.label,
+.panel-title,
+.minui-frame-header,
+.minui-title{
+  font-weight: 700 !important;
+}
+
+#instrumentControls .instrument button[id^="randomize"],
+#instrumentControls .instrument button[id^="simplify"]{
+  display: none !important;
+}
+
+.muted.mono{
+  display: none !important;
+}
+
+#sliders{
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 14px 18px !important;
+  align-items: flex-start !important;
+}
+#sliders .row{
+  width: auto !important;
 }
 
 .rr-chkcol{
