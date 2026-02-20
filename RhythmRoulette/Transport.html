@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Transport — WebMIDI</title>
+
+  <!-- Match Cadence styling system -->
+  <link rel="stylesheet" href="./rr-ui.css">
+  <script src="./rr-ui.js" defer></script>
+</head>
+
+<body>
+  <div class="minui-wrap">
+    <!-- Header row (Transport title line removed) -->
+    <div class="minui-row" style="justify-content:flex-end;">
+      <div class="statusPill">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText" class="note">Disconnected</span>
+      </div>
+    </div>
+
+    <!-- MIDI output row (Velocity removed) -->
+    <div class="minui-row">
+      <div class="block">
+        <label for="midiOut">Output</label>
+        <select id="midiOut"></select>
+      </div>
+
+      <div class="block" style="min-width:120px;">
+        <label for="outCh">CH</label>
+        <select id="outCh" style="min-width:120px;">
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+          <option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+          <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Transport controls -->
+    <div class="minui-row">
+      <div class="buttons">
+        <button id="btnPlayToggle" type="button" title="Space toggles too">Play</button>
+        <button id="btnTap" type="button">Tap Tempo</button>
+      </div>
+    </div>
+
+    <div class="minui-row">
+      <div class="block">
+        <label for="targetBpm">Target BPM</label>
+        <input id="targetBpm" type="number" min="20" max="300" step="0.1" value="120" />
+      </div>
+
+      <div class="buttons">
+        <button id="btnRandomizeBpm" type="button">Randomize</button>
+      </div>
+    </div>
+
+    <!-- (All informational text below removed) -->
+  </div>
+
+<script>
+(() => {
+  // --- MIDI note map (change if you want different notes) ---
+  const NOTES = {
+    PLAY: 60,
+    STOP: 61,
+    TAP:  62,
+  };
+
+  // Fixed velocity (Velocity UI removed)
+  const FIXED_VELOCITY = 100;
+
+  let midiAccess = null;
+  let outPort = null;
+
+  const el = {
+    midiOut: document.getElementById('midiOut'),
+    outCh: document.getElementById('outCh'),
+    statusText: document.getElementById('statusText'),
+    statusDot: document.getElementById('statusDot'),
+
+    // Transport buttons
+    btnPlayToggle: document.getElementById('btnPlayToggle'),
+    btnTap: document.getElementById('btnTap'),
+
+    targetBpm: document.getElementById('targetBpm'),
+    btnRandomizeBpm: document.getElementById('btnRandomizeBpm'),
+  };
+
+  function setStatus(connected, text){
+    el.statusText.textContent = text;
+    el.statusDot.classList.toggle('on', !!connected);
+  }
+
+  function chToZeroBased(){
+    const ch = parseInt(el.outCh.value, 10);
+    return Math.min(16, Math.max(1, ch)) - 1;
+  }
+
+  function sendNote(note, isOn=true){
+    if(!outPort) return;
+    const ch = chToZeroBased();
+    const status = (isOn ? 0x90 : 0x80) + ch;
+    const vel = isOn ? FIXED_VELOCITY : 0;
+    outPort.send([status, note & 0x7F, vel & 0x7F]);
+  }
+
+  function triggerNote(note, ms=40){
+    sendNote(note, true);
+    setTimeout(() => sendNote(note, false), ms);
+  }
+
+  function refreshOutputs(){
+    const prev = el.midiOut.value;
+    el.midiOut.innerHTML = '';
+
+    const outputs = Array.from(midiAccess.outputs.values());
+    for (const port of outputs){
+      const opt = document.createElement('option');
+      opt.value = port.id;
+      opt.textContent = port.name || `MIDI Out ${port.id}`;
+      el.midiOut.appendChild(opt);
+    }
+
+    if (outputs.length === 0){
+      setStatus(false, 'No MIDI outputs found');
+      outPort = null;
+      return;
+    }
+
+    const stillThere = outputs.some(p => p.id === prev);
+    el.midiOut.value = stillThere ? prev : outputs[0].id;
+    outPort = outputs.find(p => p.id === el.midiOut.value) || outputs[0];
+    setStatus(true, `Connected: ${outPort.name || outPort.id}`);
+  }
+
+  async function initMIDI(){
+    if(!navigator.requestMIDIAccess){
+      setStatus(false, 'WebMIDI not supported in this browser');
+      return;
+    }
+    try{
+      midiAccess = await navigator.requestMIDIAccess({ sysex:false });
+      midiAccess.onstatechange = refreshOutputs;
+      refreshOutputs();
+    }catch(err){
+      setStatus(false, 'MIDI permission denied / unavailable');
+      console.error(err);
+    }
+  }
+
+  // --- BPM helpers ---
+  function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+  async function tapToBpm(targetBpm, taps=6){
+    const interval = 60000 / targetBpm;
+    for(let i=0;i<taps;i++){
+      triggerNote(NOTES.TAP, 30);
+      await sleep(interval);
+    }
+  }
+
+  // Output selection
+  el.midiOut.addEventListener('change', () => {
+    if(!midiAccess) return;
+    outPort = Array.from(midiAccess.outputs.values()).find(p => p.id === el.midiOut.value) || null;
+    setStatus(!!outPort, outPort ? `Connected: ${outPort.name || outPort.id}` : 'Disconnected');
+  });
+
+  // Tap button
+  el.btnTap.addEventListener('click', () => triggerNote(NOTES.TAP));
+
+  // =========================================================
+  // Auto-run tap-based set BPM whenever Target BPM changes
+  // =========================================================
+  let setBpmInProgress = false;
+  let lastQueuedBpm = null;
+  let autoSetTimer = null;
+
+  function isValidBpm(bpm){
+    return isFinite(bpm) && bpm > 0;
+  }
+
+  function setUiBusy(busy){
+    el.targetBpm.disabled = !!busy;
+    el.btnRandomizeBpm.disabled = !!busy;
+    el.btnPlayToggle.disabled = !!busy;
+    el.btnTap.disabled = !!busy;
+  }
+
+  async function runTapSetBpmNow(bpm){
+    if(!isValidBpm(bpm)) return;
+    if(setBpmInProgress) return;
+
+    setBpmInProgress = true;
+    setUiBusy(true);
+    try{
+      await tapToBpm(bpm, 4);
+    }finally{
+      setBpmInProgress = false;
+      setUiBusy(false);
+      if(lastQueuedBpm !== null){
+        const next = lastQueuedBpm;
+        lastQueuedBpm = null;
+        setTimeout(() => runTapSetBpmNow(next), 0);
+      }
+    }
+  }
+
+  function scheduleAutoTapSetFromTarget(){
+    const bpm = parseFloat(el.targetBpm.value);
+    if(!isValidBpm(bpm)) return;
+
+    if(setBpmInProgress){
+      lastQueuedBpm = bpm;
+      return;
+    }
+
+    if(autoSetTimer) clearTimeout(autoSetTimer);
+    autoSetTimer = setTimeout(() => {
+      autoSetTimer = null;
+      runTapSetBpmNow(bpm);
+    }, 250);
+  }
+
+  el.targetBpm.addEventListener('input', scheduleAutoTapSetFromTarget);
+  el.targetBpm.addEventListener('change', scheduleAutoTapSetFromTarget);
+
+  // Randomize BPM (80–160) -> write Target BPM -> auto triggers tap-set
+  function randomIntInclusive(min, max){
+    const lo = Math.ceil(min);
+    const hi = Math.floor(max);
+    return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+  }
+
+  function doRandomizeBpm(){
+    const bpm = randomIntInclusive(80, 160);
+    el.targetBpm.value = String(bpm);
+    scheduleAutoTapSetFromTarget();
+  }
+
+  el.btnRandomizeBpm.addEventListener('click', doRandomizeBpm);
+
+  // Listen to Cadence randomize-all and trigger Randomize BPM
+  try{
+    const randomizeChannel = new BroadcastChannel('randomize_channel');
+    randomizeChannel.onmessage = (event) => {
+      const data = event && event.data;
+      if(!data || typeof data !== 'object') return;
+      if(data.type === 'randomize_all'){
+        doRandomizeBpm();
+      }
+    };
+  }catch(err){
+    console.warn('BroadcastChannel unavailable:', err);
+  }
+
+  /* =========================================================
+     Play/Stop toggle (single button only)
+     ========================================================= */
+  let isPlayingUI = false;
+
+  function syncPlayToggleLabel(){
+    el.btnPlayToggle.textContent = isPlayingUI ? 'Stop' : 'Play';
+  }
+
+  function togglePlayStop(){
+    if (isPlayingUI) {
+      triggerNote(NOTES.STOP, 40);
+      isPlayingUI = false;
+    } else {
+      triggerNote(NOTES.PLAY, 40);
+      isPlayingUI = true;
+    }
+    syncPlayToggleLabel();
+  }
+
+  el.btnPlayToggle.addEventListener('click', togglePlayStop);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+
+    const t = e.target;
+    const tag = (t && t.tagName) ? t.tagName.toLowerCase() : '';
+    const isTyping = !!(t && (t.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select')) || e.isComposing;
+
+    if (isTyping) return;
+
+    e.preventDefault();
+    togglePlayStop();
+  });
+
+  syncPlayToggleLabel();
+  initMIDI();
+})();
+</script>
+</body>
+</html>

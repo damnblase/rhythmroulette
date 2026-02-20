@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>KeyToCC</title>
   <link rel="stylesheet" href="./rr-ui.css">
-<script src="./rr-ui.js" defer></script>
+  <script src="./rr-ui.js" defer></script>
 </head>
 <body>
-  <h1>KeyToCC</h1>
 
-  <div class="status">
+  <!-- Entire status header hidden -->
+  <div class="status" style="display:none;">
     <div>
-      <div class="small">Listening on <span class="mono">BroadcastChannel('music-key')</span> (type === "key")</div>
+      <div class="small">Listening on BroadcastChannel('music-key')</div>
       <div class="small">Sends MIDI CC to Ableton Live via WebMIDI</div>
     </div>
     <div id="midiPill" class="pill warn">MIDI: initializing…</div>
@@ -20,13 +20,14 @@
 
   <div class="grid">
     <div class="card">
+
       <div class="row">
-        <label for="midiOutSelect">MIDI Output Bus</label>
+        <label for="midiOutSelect">Output</label>
         <select id="midiOutSelect"></select>
       </div>
 
       <div class="row">
-        <label for="midiChSelect">MIDI Output Channel</label>
+        <label for="midiChSelect">CH</label>
         <select id="midiChSelect"></select>
       </div>
 
@@ -35,43 +36,25 @@
         <input id="ccNumber" type="number" min="0" max="127" step="1" value="20" />
       </div>
 
-      <div class="spacer"></div>
-
-      <div class="row">
-        <label>MIDI Status</label>
-        <div class="mono" id="midiStatusText">Initializing…</div>
+      <!-- Hidden internal status elements -->
+      <div style="display:none;">
+        <div id="midiStatusText"></div>
+        <div id="selectedOutText"></div>
+        <div id="selectedChText"></div>
       </div>
 
-      <div class="row">
-        <label>Selected Output</label>
-        <div class="mono" id="selectedOutText">—</div>
-      </div>
-
-      <div class="row">
-        <label>Selected Channel</label>
-        <div class="mono" id="selectedChText">1</div>
-      </div>
     </div>
 
     <div class="card">
-      <div class="row">
-        <label>Last Received Key</label>
-        <div class="mono" id="lastKeyText">—</div>
+
+      <!-- Hidden monitoring UI -->
+      <div style="display:none;">
+        <div id="lastKeyText"></div>
+        <div id="lastSentText"></div>
+        <div id="lastErrorText"></div>
       </div>
 
-      <div class="row">
-        <label>Last Sent CC</label>
-        <div class="mono" id="lastSentText">—</div>
-      </div>
-
-      <div class="row">
-        <label>Last Error</label>
-        <div class="mono" id="lastErrorText">—</div>
-      </div>
-
-      <hr style="border:none;border-top:1px solid rgba(127,127,127,0.25); margin: 14px 0;" />
-
-      <div class="small" style="margin-bottom: 8px;"><strong>Manual test</strong> (send without external app)</div>
+      <div class="small" style="margin-bottom:8px;"><strong>Manual test</strong></div>
 
       <div class="row">
         <label for="manualKeySelect">Key</label>
@@ -83,313 +66,176 @@
         <button id="sendNowBtn">Send Now</button>
       </div>
 
-      <div class="small">
-        Note: This page requests MIDI access automatically on load. Some browsers require the page to be served over HTTPS (or localhost).
-      </div>
     </div>
   </div>
 
-  <script>
-    (() => {
-      "use strict";
+<script>
+(() => {
+"use strict";
 
-      // --- Fixed mapping (with enharmonics normalization) ---
-      const KEY_TO_VALUE = Object.freeze({
-        "C": 0,
-        "C#": 10,
-        "D": 26,
-        "Eb": 37,
-        "E": 46,
-        "F": 57,
-        "F#": 67,
-        "G": 84,
-        "Ab": 92,
-        "A": 106,
-        "Bb": 116,
-        "B": 127
-      });
+const KEY_TO_VALUE = Object.freeze({
+"C": 0,"C#": 10,"D": 26,"Eb": 37,"E": 46,"F": 57,
+"F#": 67,"G": 84,"Ab": 92,"A": 106,"Bb": 116,"B": 127
+});
 
-      const UI_KEYS = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+const UI_KEYS = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
 
-      function normalizeTonic(tonic) {
-        if (typeof tonic !== "string") return null;
-        const t = tonic.trim();
-        if (!t) return null;
+function normalizeTonic(t){
+if(typeof t!=="string")return null;
+t=t.trim();
+if(!t)return null;
+if(t==="G#")return"Ab";
+if(t==="E♭")return"Eb";
+if(t==="B♭")return"Bb";
+if(t==="A♭")return"Ab";
+if(t==="C♯")return"C#";
+if(t==="F♯")return"F#";
+if(t==="G♯")return"Ab";
+return t;
+}
 
-        // Treat Ab same as G# (value 92).
-        if (t === "G#") return "Ab";
-        // Treat common unicode flats/sharps if they appear.
-        if (t === "E♭") return "Eb";
-        if (t === "B♭") return "Bb";
-        if (t === "A♭") return "Ab";
-        if (t === "C♯") return "C#";
-        if (t === "F♯") return "F#";
-        if (t === "G♯") return "Ab";
+const midiPill=document.getElementById("midiPill");
+const midiStatusText=document.getElementById("midiStatusText");
+const midiOutSelect=document.getElementById("midiOutSelect");
+const midiChSelect=document.getElementById("midiChSelect");
+const ccNumberInput=document.getElementById("ccNumber");
+const selectedOutText=document.getElementById("selectedOutText");
+const selectedChText=document.getElementById("selectedChText");
+const lastKeyText=document.getElementById("lastKeyText");
+const lastSentText=document.getElementById("lastSentText");
+const lastErrorText=document.getElementById("lastErrorText");
+const manualKeySelect=document.getElementById("manualKeySelect");
+const sendNowBtn=document.getElementById("sendNowBtn");
 
-        return t;
-      }
+let midiAccess=null;
+let selectedOutputId=null;
+let lastSentKey=null;
+let lastSentValue=null;
 
-      // --- DOM ---
-      const midiPill = document.getElementById("midiPill");
-      const midiStatusText = document.getElementById("midiStatusText");
-      const midiOutSelect = document.getElementById("midiOutSelect");
-      const midiChSelect = document.getElementById("midiChSelect");
-      const ccNumberInput = document.getElementById("ccNumber");
+function setError(msg){ lastErrorText.textContent=msg||""; }
+function setLastSent(cc,val){ lastSentText.textContent=(cc!=null&&val!=null)?`CC ${cc} → ${val}`:""; }
 
-      const selectedOutText = document.getElementById("selectedOutText");
-      const selectedChText = document.getElementById("selectedChText");
+function getCcNumber(){
+let n=Number(ccNumberInput.value);
+if(!Number.isFinite(n))return null;
+n=Math.max(0,Math.min(127,Math.round(n)));
+ccNumberInput.value=String(n);
+return n;
+}
 
-      const lastKeyText = document.getElementById("lastKeyText");
-      const lastSentText = document.getElementById("lastSentText");
-      const lastErrorText = document.getElementById("lastErrorText");
+function getChannel(){
+let ch=Number(midiChSelect.value);
+if(!Number.isFinite(ch)||ch<1||ch>16)return 1;
+return ch;
+}
 
-      const manualKeySelect = document.getElementById("manualKeySelect");
-      const sendNowBtn = document.getElementById("sendNowBtn");
+function getSelectedOutput(){
+if(!midiAccess)return null;
+let id=midiOutSelect.value||selectedOutputId;
+if(!id)return null;
+return midiAccess.outputs.get(id)||null;
+}
 
-      // --- State ---
-      let midiAccess = null;
-      let selectedOutputId = null;
-      let lastSentKey = null;
-      let lastSentValue = null;
+function populateChannels(){
+midiChSelect.innerHTML="";
+for(let i=1;i<=16;i++){
+let o=document.createElement("option");
+o.value=String(i);
+o.textContent=String(i);
+midiChSelect.appendChild(o);
+}
+midiChSelect.value="1";
+}
 
-      // --- UI helpers ---
-      function setPill(kind, text) {
-        midiPill.classList.remove("ok","warn","err");
-        midiPill.classList.add(kind);
-        midiPill.textContent = text;
-      }
+function populateKeyDropdown(sel){
+sel.innerHTML="";
+UI_KEYS.forEach(k=>{
+let o=document.createElement("option");
+o.value=k;
+o.textContent=k;
+sel.appendChild(o);
+});
+sel.value="C";
+}
 
-      function setError(msg) {
-        lastErrorText.textContent = msg || "—";
-      }
+function populateOutputs(){
+if(!midiAccess)return;
+let outputs=Array.from(midiAccess.outputs.values());
+midiOutSelect.innerHTML="";
+if(outputs.length===0){selectedOutputId=null;return;}
+outputs.forEach(out=>{
+let o=document.createElement("option");
+o.value=out.id;
+o.textContent=out.name||"Unnamed Output";
+midiOutSelect.appendChild(o);
+});
+selectedOutputId=outputs[0].id;
+midiOutSelect.value=selectedOutputId;
+}
 
-      function setLastSent(ccNum, value) {
-        if (typeof ccNum === "number" && typeof value === "number") {
-          lastSentText.textContent = `CC ${ccNum} → ${value}`;
-        } else {
-          lastSentText.textContent = "—";
-        }
-      }
+function sendMappedValue(val,tonic,{force=false}={}){
+setError("");
+let out=getSelectedOutput();
+if(!out){setError("No MIDI output selected/available.");return;}
+let cc=getCcNumber();
+if(cc==null){setError("Invalid CC number.");return;}
+let ch=getChannel();
+if(!force&&lastSentKey===tonic&&lastSentValue===val)return;
+let status=0xB0+(ch-1);
+try{
+out.send([status,cc&0x7F,val&0x7F]);
+lastSentKey=tonic;
+lastSentValue=val;
+lastKeyText.textContent=tonic||"";
+setLastSent(cc,val);
+}catch(e){
+setError(e.message||String(e));
+}
+}
 
-      function getCcNumber() {
-        const n = Number(ccNumberInput.value);
-        if (!Number.isFinite(n)) return null;
-        const cc = Math.max(0, Math.min(127, Math.round(n)));
-        ccNumberInput.value = String(cc);
-        return cc;
-      }
+function handleIncomingKey(raw){
+let tonic=normalizeTonic(raw);
+if(!tonic)return;
+let mapped=KEY_TO_VALUE[tonic];
+if(mapped==null)return;
+sendMappedValue(mapped,tonic);
+}
 
-      function getChannel() {
-        const ch = Number(midiChSelect.value);
-        if (!Number.isFinite(ch) || ch < 1 || ch > 16) return 1;
-        return ch;
-      }
+function initBroadcast(){
+let bc=new BroadcastChannel("music-key");
+bc.onmessage=(e)=>{
+let msg=e.data;
+if(!msg||msg.type!=="key")return;
+handleIncomingKey(msg.tonic);
+};
+}
 
-      function getSelectedOutput() {
-        if (!midiAccess) return null;
-        const id = midiOutSelect.value || selectedOutputId;
-        if (!id) return null;
-        return midiAccess.outputs.get(id) || null;
-      }
+async function initMIDI(){
+if(!navigator.requestMIDIAccess)return;
+try{
+midiAccess=await navigator.requestMIDIAccess({sysex:false});
+midiAccess.onstatechange=populateOutputs;
+populateOutputs();
+}catch(e){}
+}
 
-      function refreshSelectedTexts() {
-        const out = getSelectedOutput();
-        selectedOutText.textContent = out ? `${out.name || "Unnamed Output"}${out.manufacturer ? " (" + out.manufacturer + ")" : ""}` : "—";
-        selectedChText.textContent = String(getChannel());
-      }
+midiOutSelect.addEventListener("change",()=>{
+selectedOutputId=midiOutSelect.value||null;
+});
 
-      function populateChannels() {
-        midiChSelect.innerHTML = "";
-        for (let i = 1; i <= 16; i++) {
-          const opt = document.createElement("option");
-          opt.value = String(i);
-          opt.textContent = String(i);
-          midiChSelect.appendChild(opt);
-        }
-        midiChSelect.value = "1";
-      }
+sendNowBtn.addEventListener("click",()=>{
+let tonic=normalizeTonic(manualKeySelect.value);
+if(!tonic)return;
+let mapped=KEY_TO_VALUE[tonic];
+if(mapped==null)return;
+sendMappedValue(mapped,tonic,{force:true});
+});
 
-      function populateKeyDropdown(sel) {
-        sel.innerHTML = "";
-        for (const k of UI_KEYS) {
-          const opt = document.createElement("option");
-          opt.value = k;
-          opt.textContent = k;
-          sel.appendChild(opt);
-        }
-        sel.value = "C";
-      }
-
-      function populateOutputs(keepSelection = true) {
-        if (!midiAccess) return;
-
-        const outputs = Array.from(midiAccess.outputs.values());
-        midiOutSelect.innerHTML = "";
-
-        if (outputs.length === 0) {
-          selectedOutputId = null;
-          setPill("warn", "MIDI: no outputs");
-          midiStatusText.textContent = "No MIDI outputs detected.";
-          refreshSelectedTexts();
-          return;
-        }
-
-        for (const out of outputs) {
-          const opt = document.createElement("option");
-          opt.value = out.id;
-          opt.textContent = out.name || "Unnamed Output";
-          midiOutSelect.appendChild(opt);
-        }
-
-        // Keep previous selection if possible
-        let nextId = null;
-        if (keepSelection) {
-          const desired = midiOutSelect.value || selectedOutputId;
-          if (desired && midiAccess.outputs.get(desired)) nextId = desired;
-        }
-        if (!nextId) nextId = outputs[0].id;
-
-        midiOutSelect.value = nextId;
-        selectedOutputId = nextId;
-
-        setPill("ok", "MIDI: ready");
-        midiStatusText.textContent = `Ready (${outputs.length} output${outputs.length === 1 ? "" : "s"}).`;
-        refreshSelectedTexts();
-      }
-
-      // --- MIDI send ---
-      function sendMappedValue(mappedValue, tonicLabel, { force = false } = {}) {
-        setError("");
-
-        if (mappedValue == null || !Number.isFinite(mappedValue)) return;
-
-        const out = getSelectedOutput();
-        if (!out) {
-          setError("No MIDI output selected/available.");
-          return;
-        }
-
-        const ccNum = getCcNumber();
-        if (ccNum == null) {
-          setError("Invalid CC number.");
-          return;
-        }
-
-        const channel = getChannel();
-
-        // Only send when the key actually changes
-        if (!force && lastSentKey === tonicLabel && lastSentValue === mappedValue) {
-          return;
-        }
-
-        const status = 0xB0 + (channel - 1);
-        const data = [ccNum & 0x7F, mappedValue & 0x7F];
-
-        try {
-          out.send([status, ...data]);
-          lastSentKey = tonicLabel;
-          lastSentValue = mappedValue;
-
-          lastKeyText.textContent = tonicLabel || "—";
-          setLastSent(ccNum, mappedValue);
-          refreshSelectedTexts();
-        } catch (e) {
-          setError(`Failed to send MIDI: ${e && e.message ? e.message : String(e)}`);
-        }
-      }
-
-      function handleIncomingKey(tonicRaw) {
-        const tonic = normalizeTonic(tonicRaw);
-        lastKeyText.textContent = tonicRaw ?? "—";
-
-        if (!tonic) {
-          setError("Received key message without a valid tonic.");
-          return;
-        }
-
-        const mapped = KEY_TO_VALUE[tonic];
-        if (mapped == null) {
-          setError(`Unsupported tonic: "${tonic}".`);
-          return;
-        }
-
-        sendMappedValue(mapped, tonic, { force: false });
-      }
-
-      // --- BroadcastChannel listener ---
-      function initBroadcast() {
-        const bc = new BroadcastChannel("music-key");
-        bc.onmessage = (evt) => {
-          const msg = evt && evt.data;
-          if (!msg || typeof msg !== "object") return;
-          if (msg.type !== "key") return;
-          handleIncomingKey(msg.tonic);
-        };
-      }
-
-      // --- WebMIDI init ---
-      async function initMIDI() {
-        setPill("warn", "MIDI: initializing…");
-        midiStatusText.textContent = "Requesting MIDI access…";
-
-        if (!navigator.requestMIDIAccess) {
-          setPill("err", "MIDI: unavailable");
-          midiStatusText.textContent = "WebMIDI not supported in this browser.";
-          return;
-        }
-
-        try {
-          midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-
-          midiAccess.onstatechange = () => {
-            // Keep current selection if possible; fall back to first if removed
-            const keep = !!(selectedOutputId && midiAccess.outputs.get(selectedOutputId));
-            populateOutputs(keep);
-          };
-
-          populateOutputs(true);
-        } catch (e) {
-          setPill("err", "MIDI: unavailable");
-          midiStatusText.textContent = "MIDI access denied or unavailable.";
-          setError(`MIDI error: ${e && e.message ? e.message : String(e)}`);
-        }
-      }
-
-      // --- Events ---
-      midiOutSelect.addEventListener("change", () => {
-        selectedOutputId = midiOutSelect.value || null;
-        refreshSelectedTexts();
-      });
-
-      midiChSelect.addEventListener("change", () => {
-        refreshSelectedTexts();
-      });
-
-      ccNumberInput.addEventListener("change", () => {
-        getCcNumber();
-      });
-
-      sendNowBtn.addEventListener("click", () => {
-        const tonic = normalizeTonic(manualKeySelect.value);
-        if (!tonic) return;
-        const mapped = KEY_TO_VALUE[tonic];
-        if (mapped == null) {
-          setError(`Unsupported tonic: "${tonic}".`);
-          return;
-        }
-        // Manual test should always send (even if same key/value) for testing convenience
-        sendMappedValue(mapped, tonic, { force: true });
-      });
-
-      // --- Boot ---
-      populateChannels();
-      populateKeyDropdown(manualKeySelect);
-      initBroadcast();
-      initMIDI();
-      refreshSelectedTexts();
-      setLastSent(null, null);
-      setError("");
-    })();
-  </script>
+populateChannels();
+populateKeyDropdown(manualKeySelect);
+initBroadcast();
+initMIDI();
+})();
+</script>
 </body>
 </html>
