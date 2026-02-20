@@ -134,11 +134,11 @@
     .minui-frame iframe{
       width: 100%;
       height: 260px;
-      max-height: 400px;
+      max-height: none;
       border: 0;
       display: block;
       background: transparent;
-      overflow-y: auto;
+      overflow: hidden;
     }
 
     #singleView{
@@ -375,7 +375,9 @@
 <script>
 (() => {
   const EXTRA_BOTTOM_PX = 5;
-  const MAX_IFRAME_HEIGHT = 520;
+  const MIN_IFRAME_HEIGHT = 180;
+  const MAX_IFRAME_HEIGHT = 440;
+  const MAX_COMPACT_IFRAME_HEIGHT = 340;
   const SINGLE_MIN_HEIGHT = 360;
 
   const iframes = () => Array.from(document.querySelectorAll('#gridView iframe'));
@@ -390,6 +392,13 @@
       rafPending = false;
       resizeAndEqualize();
     });
+  };
+
+  const scheduleStabilized = () => {
+    schedule();
+    setTimeout(schedule, 80);
+    setTimeout(schedule, 220);
+    setTimeout(schedule, 500);
   };
 
   const safeNumber = (v, fallback) => (Number.isFinite(v) && v > 0 ? v : fallback);
@@ -426,8 +435,15 @@
     return Math.max(100, Math.ceil(rect.height || 0));
   }
 
+  function isCompactModule(iframe) {
+    const src = (iframe.getAttribute("src") || "").toLowerCase();
+    return src.includes("bassline.html")
+      || src.includes("shaker.html")
+      || src.includes("ride.html");
+  }
+
   function groupByRow(iframeList) {
-    const tolerance = 2;
+    const tolerance = 3;
     const rows = [];
     for (const iframe of iframeList) {
       const top = Math.round(iframe.getBoundingClientRect().top);
@@ -438,7 +454,7 @@
       }
       row.items.push(iframe);
     }
-    rows.sort((a,b) => a.top - b.top);
+    rows.sort((a, b) => a.top - b.top);
     return rows;
   }
 
@@ -449,32 +465,41 @@
 
     const natural = new Map();
     for (const iframe of list) {
-      natural.set(iframe, getNaturalHeight(iframe));
+      iframe.setAttribute("scrolling", "no");
+      natural.set(iframe, safeNumber(getNaturalHeight(iframe), MIN_IFRAME_HEIGHT));
     }
 
     const rows = groupByRow(list);
-
     for (const row of rows) {
-      let maxH = 0;
+      let maxH = MIN_IFRAME_HEIGHT;
       for (const iframe of row.items) {
-        maxH = Math.max(maxH, safeNumber(natural.get(iframe), 0));
+        maxH = Math.max(maxH, safeNumber(natural.get(iframe), MIN_IFRAME_HEIGHT));
       }
-      if (!maxH) continue;
+      const targetH = Math.min(maxH, MAX_IFRAME_HEIGHT);
       for (const iframe of row.items) {
-        iframe.style.height = `${Math.min(maxH, MAX_IFRAME_HEIGHT)}px`;
+        const cap = isCompactModule(iframe) ? MAX_COMPACT_IFRAME_HEIGHT : MAX_IFRAME_HEIGHT;
+        iframe.style.height = `${Math.min(targetH, cap)}px`;
       }
     }
 
     if (activeSingle) {
+      activeSingle.setAttribute("scrolling", "no");
       const h = getNaturalHeight(activeSingle);
       activeSingle.style.height = `${Math.max(SINGLE_MIN_HEIGHT, h)}px`;
     }
   }
 
   window.addEventListener('resize', schedule, { passive: true });
-  document.addEventListener('click', schedule, { passive: true });
-  document.addEventListener('input', schedule, { passive: true });
-  schedule();
+  const root = document.documentElement;
+  if (root) {
+    const mo = new MutationObserver(schedule);
+    mo.observe(root, { attributes: true, attributeFilter: ["class", "data-rr-theme"] });
+  }
+  const allFrames = () => Array.from(document.querySelectorAll("iframe"));
+  allFrames().forEach((iframe) => {
+    iframe.addEventListener("load", scheduleStabilized);
+  });
+  scheduleStabilized();
 })();
 </script>
 

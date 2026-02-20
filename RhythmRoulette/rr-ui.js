@@ -48,6 +48,21 @@
     }
   }
 
+  function applyModuleZoom(doc) {
+    try {
+      const win = doc.defaultView;
+      if (!win || !win.frameElement) return;
+      doc.documentElement.style.height = "auto";
+      doc.documentElement.style.minHeight = "0";
+      if (doc.body) {
+        doc.body.style.height = "auto";
+        doc.body.style.minHeight = "0";
+      }
+      doc.documentElement.style.zoom = "0.92";
+      if (doc.body) doc.body.style.zoom = "0.92";
+    } catch {}
+  }
+
   function makeButton(doc, label, isOn, groupName, value, range) {
     const wrap = doc.createElement("label");
     wrap.className = "rr-radio-option";
@@ -288,6 +303,7 @@
   function runInDocument(doc) {
     ensureCss(doc);
     syncThemeClass(doc);
+    applyModuleZoom(doc);
 
     const ranges = Array.from(doc.querySelectorAll('input[type="range"]'));
     ranges.forEach(r => replaceRangeWithRadios(doc, r));
