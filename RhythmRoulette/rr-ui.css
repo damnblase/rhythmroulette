@@ -172,6 +172,13 @@ input[type="text"],
 
 .rand-btn {
   font-size: 24px;
+  line-height: 1;
+}
+
+.rr-icon-btn{
+  font-size: 26px;
+  line-height: 1;
+  min-width: 48px;
 }
 
 button{
@@ -197,6 +204,15 @@ input:focus-visible{
 button.primary{
   background: var(--rr-accent) !important;
   color: #fff !important;
+}
+
+.buttons #playBtn{
+  min-width: 96px;
+  width: 96px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  white-space: nowrap;
 }
 
 select{

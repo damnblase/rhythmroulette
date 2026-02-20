@@ -35,7 +35,6 @@
     <div class="row minui-row">
       <div class="buttons">
         <button id="playBtn" title="Space toggles too">Play</button>
-        <button id="stopBtn" title="Space toggles too">Stop</button>
          <button id="randomizeAll" class="rand-btn" title="Randomize All">⟳</button>
       </div>
     </div>
@@ -220,7 +219,7 @@
     if (currentMode === 'external-ticker') {
       isPlaying = true;
       playStateEl.textContent = 'Playing (external)';
-      playBtn.textContent = 'Restart';
+      playBtn.textContent = 'Stop';
       return;
     }
 
@@ -240,7 +239,7 @@
 
     isPlaying = true;
     playStateEl.textContent = 'Playing';
-    playBtn.textContent = 'Restart';
+    playBtn.textContent = 'Pause';
 
     startCtxTime = ctx.currentTime;
     nextTickIndex = 0;
@@ -281,8 +280,12 @@
     });
   }
 
-  playBtn.addEventListener('click', start);
-  stopBtn.addEventListener('click', stop);
+  playBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (isPlaying) stop(); else start();
+  });
+
+  if (stopBtn) stopBtn.addEventListener('click', stop);
 
   window.addEventListener('keydown', (e) => {
     const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
@@ -412,21 +415,11 @@
     return t.startsWith('playing');
   }
   function minuiSyncToggleLabel() {
-    playBtn.textContent = minuiIsPlaying() ? 'Stop' : 'Play';
+    playBtn.textContent = minuiIsPlaying() ? 'Pause' : 'Play';
   }
 
-  // Capture-phase intercept: when playing, stop instead of start()
-  playBtn.addEventListener('click', (e) => {
-    if (minuiIsPlaying()) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      stopBtn.click(); // triggers the existing stop() handler
-      minuiSyncToggleLabel();
-    } else {
-      // Allow existing start() to run; we'll sync label right after
-      setTimeout(minuiSyncToggleLabel, 0);
-    }
-  }, true);
+
+
 
   // Also sync when play state changes (internal updates + external mode)
   const mo = new MutationObserver(() => minuiSyncToggleLabel());

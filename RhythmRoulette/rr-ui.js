@@ -268,6 +268,9 @@
 
     normalizeButtons(doc);
     hideUnneededTextBlocks(doc);
+
+    const stop = doc.querySelector('#stopBtn');
+    if (stop) stop.style.display = 'none';
   }
 
   function hookDocument(doc) {
