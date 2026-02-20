@@ -152,6 +152,27 @@
     }
   }
 
+  function randInt(min, max){
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function randomizeVisibleParams(){
+    if(density){
+      const min = +density.min;
+      const max = +density.max;
+      density.value = String(randInt(min, max));
+      density.dispatchEvent(new Event('input', { bubbles:true }));
+      density.dispatchEvent(new Event('change', { bubbles:true }));
+    }
+    if(velFloor){
+      const min = +velFloor.min;
+      const max = +velFloor.max;
+      velFloor.value = String(randInt(min, max));
+      velFloor.dispatchEvent(new Event('input', { bubbles:true }));
+      velFloor.dispatchEvent(new Event('change', { bubbles:true }));
+    }
+  }
+
   function regeneratePattern(){
     const lengths=[4,8,16];
     loopLength=lengths[Math.floor(Math.random()*lengths.length)];
@@ -205,7 +226,10 @@
     }
   };
 
-  regenBtn.addEventListener('click', regeneratePattern);
+  regenBtn.addEventListener('click', () => {
+    randomizeVisibleParams();
+    regeneratePattern();
+  });
 
   regeneratePattern();
 

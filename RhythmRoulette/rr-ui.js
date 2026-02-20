@@ -171,6 +171,15 @@
 
     updateKnob(current);
 
+    const syncFromRange = () => {
+      const v = Number(range.value);
+      if (!Number.isFinite(v)) return;
+      current = v;
+      updateKnob(current);
+    };
+    range.addEventListener("input", syncFromRange);
+    range.addEventListener("change", syncFromRange);
+
     let isDragging = false;
     let startY = 0;
     let startValue = current;
