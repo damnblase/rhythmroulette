@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="rr-dark" data-rr-theme="legacy-dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,10 +11,10 @@
     ========================================================= */
 
     :root{
-      --ui-bg: #ffffff;
-      --ui-fg: #000000;
+      --ui-bg: #111315;
+      --ui-fg: #e7ebef;
 
-      --ui-border: #000000;
+      --ui-border: #2a3138;
       --ui-radius: 10px;
 
       --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
@@ -44,7 +44,7 @@
       padding: var(--ui-page-pad);
       margin: 0 auto;
       display: grid;
-      gap: var(--ui-gap);
+      gap: 8px;
     }
 
     /* ===== HEADER ROW ===== */
@@ -65,7 +65,8 @@
       gap: var(--ui-gap);
     }
 
-    .dark-toggle{
+    .dark-toggle,
+    .theme-switcher{
       font-family: var(--ui-font);
       font-size: 14px;
       font-weight: 600;
@@ -77,7 +78,8 @@
       color: var(--ui-fg);
     }
 
-    .dark-toggle:focus{
+    .dark-toggle:focus,
+    .theme-switcher:focus{
       outline: none;
     }
 
@@ -112,26 +114,30 @@
     .minui-frame{
       flex: 1 1 420px;
       min-width: 320px;
-      border: none;               /* removed */
-      border-radius: 0;           /* removed */
-      background: var(--ui-bg);
+      border: none;
+      border-radius: 0;
+      background: transparent;
       overflow: hidden;
     }
 
     .minui-frame-header{
-      padding: 8px 12px;
-      border-bottom: none;        /* removed */
+      padding: 0;
+      border-bottom: none;
       font-weight: 500;
-      font-size: 14px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8b96a3;
+      margin: 0 0 4px 0;
     }
 
     .minui-frame iframe{
       width: 100%;
-      height: 300px;
+      height: 260px;
       max-height: 400px;
       border: 0;
       display: block;
-      background: var(--ui-bg);
+      background: transparent;
       overflow-y: auto;
     }
 
@@ -175,18 +181,6 @@
       background: var(--ui-bg);
     }
 
-    /* =========================================================
-      DARK MODE (GLOBAL DISPLAY INVERSION)
-    ========================================================= */
-
-    html.dark-mode{
-      filter: invert(1) hue-rotate(180deg);
-    }
-
-    html.dark-mode img,
-    html.dark-mode video{
-      filter: invert(1) hue-rotate(180deg);
-    }
   </style>
   <link rel="stylesheet" href="./rr-ui.css">
   <script src="./rr-ui.js" defer></script>
@@ -199,7 +193,11 @@
       <div class="minui-title">RR</div>
       <div class="minui-controls">
         <button id="viewModeToggle" class="icon-toggle" type="button" aria-label="Toggle view"></button>
-        <button id="darkModeToggle" class="dark-toggle">dark</button>
+        <select id="themeSwitcher" class="theme-switcher" aria-label="Theme switcher">
+          <option value="legacy-dark">Dark</option>
+          <option value="flat-light">Light</option>
+          <option value="ableton-dark">Ableton</option>
+        </select>
       </div>
     </div>
 
@@ -260,18 +258,27 @@
   </div>
 
 <script>
-/* DARK MODE TOGGLE */
+/* THEME SELECTOR */
 (() => {
-  const btn = document.getElementById('darkModeToggle');
-  if (!btn) return;
+  const root = document.documentElement;
+  const sel = document.getElementById('themeSwitcher');
+  if (!sel) return;
 
-  document.documentElement.classList.remove('dark-mode');
-  btn.textContent = 'dark';
+  const key = "rr_theme_id";
+  const allowed = new Set(["legacy-dark", "ableton-dark", "flat-light"]);
+  const saved = localStorage.getItem(key);
+  const initialTheme = allowed.has(saved) ? saved : "legacy-dark";
 
-  btn.addEventListener('click', () => {
-    const isDark = document.documentElement.classList.toggle('dark-mode');
-    btn.textContent = isDark ? 'light' : 'dark';
-  });
+  function applyTheme(themeId) {
+    const next = allowed.has(themeId) ? themeId : "legacy-dark";
+    root.setAttribute("data-rr-theme", next);
+    root.classList.toggle("rr-dark", next !== "flat-light");
+    sel.value = next;
+    localStorage.setItem(key, next);
+  }
+
+  applyTheme(initialTheme);
+  sel.addEventListener("change", () => applyTheme(sel.value));
 })();
 </script>
 
@@ -369,8 +376,10 @@
 (() => {
   const EXTRA_BOTTOM_PX = 5;
   const MAX_IFRAME_HEIGHT = 520;
+  const SINGLE_MIN_HEIGHT = 360;
 
   const iframes = () => Array.from(document.querySelectorAll('#gridView iframe'));
+  const singleIframe = () => document.querySelector('#singleIframe');
   const naturalHeights = new WeakMap();
   let rafPending = false;
 
@@ -435,7 +444,8 @@
 
   function resizeAndEqualize() {
     const list = iframes();
-    if (!list.length) return;
+    const activeSingle = singleIframe();
+    if (!list.length && !activeSingle) return;
 
     const natural = new Map();
     for (const iframe of list) {
@@ -454,9 +464,16 @@
         iframe.style.height = `${Math.min(maxH, MAX_IFRAME_HEIGHT)}px`;
       }
     }
+
+    if (activeSingle) {
+      const h = getNaturalHeight(activeSingle);
+      activeSingle.style.height = `${Math.max(SINGLE_MIN_HEIGHT, h)}px`;
+    }
   }
 
   window.addEventListener('resize', schedule, { passive: true });
+  document.addEventListener('click', schedule, { passive: true });
+  document.addEventListener('input', schedule, { passive: true });
   schedule();
 })();
 </script>

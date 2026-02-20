@@ -2,6 +2,12 @@
 
 (function () {
   const CSS_HREF = "./rr-ui.css";
+  const DARK_CLASS = "rr-dark";
+  const THEME_ATTR = "data-rr-theme";
+  const DEFAULT_THEME = "ableton-dark";
+  const IS_TOP = (() => {
+    try { return window.top === window; } catch { return false; }
+  })();
 
   function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -18,6 +24,28 @@
     link.rel = "stylesheet";
     link.href = CSS_HREF;
     doc.head.appendChild(link);
+  }
+
+  function readTopThemeId() {
+    try {
+      return window.top.document.documentElement.getAttribute(THEME_ATTR) || DEFAULT_THEME;
+    } catch {
+      return document.documentElement.getAttribute(THEME_ATTR) || DEFAULT_THEME;
+    }
+  }
+
+  function syncThemeClass(doc) {
+    const theme = readTopThemeId();
+    const dark = theme !== "flat-light";
+    const root = doc.documentElement;
+    if (!root) return;
+
+    if (root.getAttribute(THEME_ATTR) !== theme) {
+      root.setAttribute(THEME_ATTR, theme);
+    }
+    if (root.classList.contains(DARK_CLASS) !== dark) {
+      root.classList.toggle(DARK_CLASS, dark);
+    }
   }
 
   function makeButton(doc, label, isOn, groupName, value, range) {
@@ -238,6 +266,7 @@
       if (sel.dataset.rrSelect === "1") return;
       sel.dataset.rrSelect = "1";
       sel.classList.add("rr-select");
+      if (sel.id === "themeSwitcher") return;
 
       const hasEmptyOption = Array.from(sel.options).some(o => (o.value ?? "") === "");
       if (!hasEmptyOption) {
@@ -258,6 +287,7 @@
 
   function runInDocument(doc) {
     ensureCss(doc);
+    syncThemeClass(doc);
 
     const ranges = Array.from(doc.querySelectorAll('input[type="range"]'));
     ranges.forEach(r => replaceRangeWithRadios(doc, r));
@@ -287,19 +317,39 @@
         try {
           const doc = iframe.contentDocument;
           if (!doc) return;
+          syncThemeClass(doc);
           hookDocument(doc);
         } catch (e) {}
       });
     });
   }
 
+  function watchThemeChanges() {
+    if (!IS_TOP) return;
+    const root = document.documentElement;
+    if (!root) return;
+    const mo = new MutationObserver(() => {
+      const iframes = Array.from(document.querySelectorAll("iframe"));
+      iframes.forEach((iframe) => {
+        try {
+          const doc = iframe.contentDocument;
+          if (!doc) return;
+          syncThemeClass(doc);
+        } catch (e) {}
+      });
+    });
+    mo.observe(root, { attributes: true, attributeFilter: ["class", THEME_ATTR] });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       hookDocument(document);
       hookIframes();
+      watchThemeChanges();
     });
   } else {
     hookDocument(document);
     hookIframes();
+    watchThemeChanges();
   }
 })();
