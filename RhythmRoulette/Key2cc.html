@@ -36,6 +36,11 @@
         <input id="ccNumber" type="number" min="0" max="127" step="1" value="20" />
       </div>
 
+      <div class="row">
+        <label for="pitchCcNumber">Pitch CC (0–127)</label>
+        <input id="pitchCcNumber" type="number" min="0" max="127" step="1" value="21" />
+      </div>
+
       <!-- Hidden internal status elements -->
       <div style="display:none;">
         <div id="midiStatusText"></div>
@@ -78,6 +83,22 @@ const KEY_TO_VALUE = Object.freeze({
 "F#": 67,"G": 84,"Ab": 92,"A": 106,"Bb": 116,"B": 127
 });
 
+//
+// Pitch mapping: tonic → semitones (-6..+5) for Ableton "Pitch" knob
+// F#:-6, G:-5, Ab/G#:-4, A:-3, Bb:-2, B:-1, C:0, C#:1, D:2, Eb/D#:3, E:4, F:5
+//
+const TONIC_TO_ST = Object.freeze({
+  "F#": -6, "G": -5, "Ab": -4, "A": -3, "Bb": -2, "B": -1,
+  "C": 0, "C#": 1, "D": 2, "Eb": 3, "E": 4, "F": 5
+});
+
+// Map semitones [-6..+5] to CC [0..127] (Ableton scales via MIDI mapping Min/Max)
+const ST_MIN = -6, ST_MAX = 5;
+function stToCC(st){
+  const t = (st - ST_MIN) / (ST_MAX - ST_MIN); // 0..1
+  return Math.max(0, Math.min(127, Math.round(t * 127)));
+}
+
 const UI_KEYS = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
 
 function normalizeTonic(t){
@@ -99,6 +120,7 @@ const midiStatusText=document.getElementById("midiStatusText");
 const midiOutSelect=document.getElementById("midiOutSelect");
 const midiChSelect=document.getElementById("midiChSelect");
 const ccNumberInput=document.getElementById("ccNumber");
+const pitchCcNumberInput=document.getElementById("pitchCcNumber");
 const selectedOutText=document.getElementById("selectedOutText");
 const selectedChText=document.getElementById("selectedChText");
 const lastKeyText=document.getElementById("lastKeyText");
@@ -110,6 +132,8 @@ const sendNowBtn=document.getElementById("sendNowBtn");
 let midiAccess=null;
 let selectedOutputId=null;
 let lastSentKey=null;
+let lastSentPitchKey=null;
+let lastSentPitchValue=null;
 let lastSentValue=null;
 
 function setError(msg){ lastErrorText.textContent=msg||""; }
@@ -121,6 +145,14 @@ if(!Number.isFinite(n))return null;
 n=Math.max(0,Math.min(127,Math.round(n)));
 ccNumberInput.value=String(n);
 return n;
+}
+
+function getPitchCcNumber(){
+  let n = Number(pitchCcNumberInput.value);
+  if(!Number.isFinite(n)) return null;
+  n = Math.max(0, Math.min(127, Math.round(n)));
+  pitchCcNumberInput.value = String(n);
+  return n;
 }
 
 function getChannel(){
@@ -173,6 +205,32 @@ selectedOutputId=outputs[0].id;
 midiOutSelect.value=selectedOutputId;
 }
 
+function sendPitchFromTonic(tonic,{force=false}={}){
+  const st = TONIC_TO_ST[tonic];
+  if(st==null) return;
+
+  setError("");
+  let out = getSelectedOutput();
+  if(!out){ setError("No MIDI output selected/available."); return; }
+
+  const cc = getPitchCcNumber();
+  if(cc==null){ setError("Invalid Pitch CC number."); return; }
+
+  const ch = getChannel();
+  const val = stToCC(st);
+
+  if(!force && lastSentPitchKey===tonic && lastSentPitchValue===val) return;
+
+  const status = 0xB0 + (ch-1);
+  try{
+    out.send([status, cc & 0x7F, val & 0x7F]);
+    lastSentPitchKey = tonic;
+    lastSentPitchValue = val;
+  }catch(e){
+    setError(e.message || String(e));
+  }
+}
+
 function sendMappedValue(val,tonic,{force=false}={}){
 setError("");
 let out=getSelectedOutput();
@@ -199,6 +257,7 @@ if(!tonic)return;
 let mapped=KEY_TO_VALUE[tonic];
 if(mapped==null)return;
 sendMappedValue(mapped,tonic);
+sendPitchFromTonic(tonic);
 }
 
 function initBroadcast(){
@@ -229,6 +288,7 @@ if(!tonic)return;
 let mapped=KEY_TO_VALUE[tonic];
 if(mapped==null)return;
 sendMappedValue(mapped,tonic,{force:true});
+sendPitchFromTonic(tonic,{force:true});
 });
 
 populateChannels();
