@@ -22,22 +22,22 @@
     <div class="card">
 
       <div class="row">
-        <label for="midiOutSelect">Output</label>
+        <label for="midiOutSelect">Out</label>
         <select id="midiOutSelect"></select>
       </div>
 
       <div class="row">
-        <label for="midiChSelect">CH</label>
+        <label for="midiChSelect">Ch</label>
         <select id="midiChSelect"></select>
       </div>
 
       <div class="row">
-        <label for="ccNumber">CC Number (0–127)</label>
+        <label for="ccNumber">CC A</label>
         <input id="ccNumber" type="number" min="0" max="127" step="1" value="20" />
       </div>
 
       <div class="row">
-        <label for="pitchCcNumber">Pitch CC (0–127)</label>
+        <label for="pitchCcNumber">CC B</label>
         <input id="pitchCcNumber" type="number" min="0" max="127" step="1" value="21" />
       </div>
 
@@ -59,17 +59,12 @@
         <div id="lastErrorText"></div>
       </div>
 
-      <div class="small" style="margin-bottom:8px;"><strong>Manual test</strong></div>
-
       <div class="row">
         <label for="manualKeySelect">Key</label>
         <select id="manualKeySelect"></select>
-      </div>
-
-      <div class="row">
-        <label></label>
         <button id="sendNowBtn">Send Now</button>
       </div>
+
 
     </div>
   </div>

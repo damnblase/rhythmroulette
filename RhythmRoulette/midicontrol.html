@@ -103,7 +103,7 @@
       <!-- Removed panel title text “MIDI Out” -->
 
       <div class="row minui-row">
-        <label>Output
+        <label>Out
           <select id="midiOut"></select>
         </label>
 
@@ -112,7 +112,7 @@
           <select id="outCh"></select>
         </label>
 
-        <span class="pill small mono" id="status">Not connected</span>
+        <span class="pill small mono" id="status"></span>
       </div>
     </div>
 
@@ -174,7 +174,7 @@
       }
 
       function refreshConnectionStatus() {
-        if (midiOut) setStatus("Connected");
+        if (midiOut) setStatus("");
         else setStatus("Not connected", true);
       }
 
