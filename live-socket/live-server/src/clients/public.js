@@ -57,7 +57,7 @@ async function main($container) {
     const state = global.get('state')
     const SSID = 'ISMM';
     const password = '12345678'
-    const playerURL = 'http://romainblase.local:8000'
+    const playerURL = 'http://romainblasay.local:8000'
     switch(state) {
       case 'init': {
         render(html`

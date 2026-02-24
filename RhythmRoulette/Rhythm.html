@@ -852,7 +852,49 @@
       updateVolumes();
       console.log("All parameters randomized");
     });
+//////////////////////////////////////
+    ////////////// ici la fonction pour l'automation des syles depuis l'extérieur ......
+function applyStyleFromServer(styleName) {
 
+    console.log("Style reçu du serveur :", styleName);
+
+    // Cherche le preset correspondant par nom
+    const index = presetLibrary.findIndex(p => 
+        String(p.name).toLowerCase() === String(styleName).toLowerCase()
+    );
+
+    if (index === -1) {
+        console.warn("Preset non trouvé pour le style :", styleName);
+        return;
+    }
+/*
+    const chosenPreset = presetLibrary[index].data;
+
+    // Appliquer les probabilités
+    kickProbabilities  = chosenPreset.kick.slice();
+    snareProbabilities = chosenPreset.snare.slice();
+    hiHatProbabilities = chosenPreset.hihat.slice();
+    tomProbabilities   = chosenPreset.hightom.slice();
+    clapProbabilities  = chosenPreset.clap.slice();
+
+    // Update UI
+    generateProbabilityTable();
+    generateDuplicatePatterns();
+
+    // Regénérer les patterns
+    randomizeInstrumentPattern("Kick");
+    randomizeInstrumentPattern("Snare");
+    randomizeInstrumentPattern("Hi-Hat");
+    randomizeInstrumentPattern("Percussion");
+    randomizeInstrumentPattern("Clap");
+*/
+    // Mettre à jour le dropdown visuellement
+    document.getElementById("presetSelect").selectedIndex = index;
+
+   // console.log("Preset appliqué automatiquement :", presetLibrary[index].name);
+
+}
+////////////////////
     /***** PER-INSTRUMENT BUTTONS *****/
   ///////
   ///--WS_COMMS----//
@@ -874,6 +916,19 @@ function setupWebSocket() {
     websocket.onclose = function() {
         console.log("Connexion WebSocket fermée");
     };
+    websocket.onmessage = function(event) {
+    try {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === 'newStyle') {
+            console.log("newStyle "+msg.style)
+            applyStyleFromServer(msg.style);
+        }
+
+    } catch (err) {
+        console.error("Erreur parsing message WebSocket:", err);
+    }
+};
 }
 
 // Fonction pour envoyer les patterns via WebSocket
