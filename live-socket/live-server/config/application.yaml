@@ -5,11 +5,11 @@ clients:
     runtime: node
   controller:
     runtime: browser
-    default: true
   live-blase:
     runtime: node
   phone:
     runtime: browser
+    default: true
   public:
     runtime: browser
   midi_chords_sender:
