@@ -374,6 +374,142 @@
 
 <script>
 (() => {
+  function isCadenceFrame(iframe) {
+    const src = String(iframe.getAttribute("src") || "").toLowerCase();
+    return src.includes("cadence.html");
+  }
+
+  function isVisibleFrame(iframe) {
+    if (!iframe) return false;
+    const rects = iframe.getClientRects();
+    if (!rects || rects.length === 0) return false;
+    const style = window.getComputedStyle(iframe);
+    return style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function getCadenceFrames() {
+    return Array.from(document.querySelectorAll("iframe")).filter((iframe) => {
+      if (isCadenceFrame(iframe)) return true;
+      try {
+        return !!(iframe.contentWindow && typeof iframe.contentWindow.__rrTogglePlayPause === "function");
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function findActiveCadenceFrame() {
+    const frames = getCadenceFrames();
+    if (!frames.length) return null;
+
+    const visible = frames.find((iframe) => isVisibleFrame(iframe));
+    return visible || frames[0];
+  }
+
+  window.__rrGlobalCadenceToggle = function __rrGlobalCadenceToggle() {
+    const iframe = findActiveCadenceFrame();
+    if (!iframe) return false;
+
+    try {
+      const win = iframe.contentWindow;
+      if (!win || !win.document) return false;
+
+      const playBtn = win.document.getElementById("playBtn");
+      if (playBtn && typeof playBtn.click === "function") {
+        playBtn.click();
+        return true;
+      }
+
+      if (typeof win.__rrTogglePlayPause === "function") {
+        win.__rrTogglePlayPause();
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  };
+})();
+</script>
+
+<script>
+(() => {
+  const WIN_BOUND_KEY = "__rrSpaceToCadenceBound";
+  let handledSpaceDown = false;
+
+  function isSpaceEvent(e) {
+    return e.code === "Space" || e.key === " " || e.key === "Spacebar";
+  }
+
+  function blockEvent(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+  }
+
+  function onKeyDown(e) {
+    if (!isSpaceEvent(e)) return;
+    if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+
+    blockEvent(e);
+    handledSpaceDown = true;
+
+    const activeEl = e.target && e.target.ownerDocument ? e.target.ownerDocument.activeElement : null;
+    if (activeEl && typeof activeEl.blur === "function") {
+      activeEl.blur();
+    }
+
+    if (!e.repeat && typeof window.__rrGlobalCadenceToggle === "function") {
+      window.__rrGlobalCadenceToggle();
+    }
+  }
+
+  function onKeyPress(e) {
+    if (!isSpaceEvent(e) || !handledSpaceDown) return;
+    blockEvent(e);
+  }
+
+  function onKeyUp(e) {
+    if (!isSpaceEvent(e) || !handledSpaceDown) return;
+    handledSpaceDown = false;
+    blockEvent(e);
+  }
+
+  function bindWindow(win) {
+    if (!win || win[WIN_BOUND_KEY]) return;
+    win[WIN_BOUND_KEY] = true;
+    try {
+      win.addEventListener("keydown", onKeyDown, true);
+      win.addEventListener("keypress", onKeyPress, true);
+      win.addEventListener("keyup", onKeyUp, true);
+    } catch {}
+  }
+
+  function bindIframe(iframe) {
+    if (!iframe || iframe.dataset.rrSpaceToCadenceBound === "1") return;
+    iframe.dataset.rrSpaceToCadenceBound = "1";
+
+    const bindLoadedWindow = () => {
+      try { bindWindow(iframe.contentWindow); } catch {}
+    };
+
+    iframe.addEventListener("load", bindLoadedWindow);
+    bindLoadedWindow();
+  }
+
+  bindWindow(window);
+  Array.from(document.querySelectorAll("iframe")).forEach(bindIframe);
+
+  const mo = new MutationObserver(() => {
+    Array.from(document.querySelectorAll("iframe")).forEach(bindIframe);
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+})();
+</script>
+
+<script>
+(() => {
   const EXTRA_BOTTOM_PX = 5;
   const MIN_IFRAME_HEIGHT = 500;
   const MAX_IFRAME_HEIGHT = 500;

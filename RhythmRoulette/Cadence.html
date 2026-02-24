@@ -269,6 +269,10 @@
     }
   }
 
+  function togglePlayPause() {
+    if (isPlaying) stop(); else start();
+  }
+
   // ===== Events =====
   function syncBpmButtons() {
     const isInternal = currentMode === 'internal-ticker';
@@ -282,19 +286,17 @@
 
   playBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    if (isPlaying) stop(); else start();
+    togglePlayPause();
   });
 
   if (stopBtn) stopBtn.addEventListener('click', stop);
+  window.__rrTogglePlayPause = togglePlayPause;
 
   window.addEventListener('keydown', (e) => {
     const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
     const isTyping = tag === 'input' || tag === 'textarea' || e.isComposing;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      if (isPlaying) stop(); else start();
-    } else if (!isTyping && (e.code === 'KeyP')) {
-      if (isPlaying) stop(); else start();
+    if (!isTyping && (e.code === 'KeyP')) {
+      togglePlayPause();
     }
   });
 
