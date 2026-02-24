@@ -97,6 +97,8 @@
   let startCtxTime = 0;       // ctx.currentTime at (re)start
   let nextTickIndex = 0;      // 0..127 for the next tick to schedule/post
   let nextTickCtxTime = 0;    // exact (base) ctx time of next tick without swing
+  //
+  let isRemoteUpdate = false;
 
   // Track scheduled nodes so we can cancel them on Stop
   const scheduledNodes = new Set();
@@ -108,6 +110,7 @@
     const v = Math.max(40, Math.min(300, parseFloat(bpmInput.value || '120')));
     return v;
   }
+
   function clampBpm(v) {
     const min = (bpmInput && bpmInput.min !== '' && bpmInput.min != null) ? parseFloat(bpmInput.min) : 40;
     const max = (bpmInput && bpmInput.max !== '' && bpmInput.max != null) ? parseFloat(bpmInput.max) : 300;
@@ -117,8 +120,10 @@
   function setBpmThroughInput(v) {
     const clamped = clampBpm(v);
     bpmInput.value = String(Math.round(clamped));
-    bpmInput.dispatchEvent(new Event('input', { bubbles: true }));
+    bpmInput.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  
+  
 
   function sixteenthMsAtBPM(bpm) { return (60000 / bpm) / 4; }
   function sixteenthSecAtBPM(bpm) { return sixteenthMsAtBPM(bpm) / 1000; }
@@ -273,44 +278,80 @@
   function syncBpmButtons() {
     const isInternal = currentMode === 'internal-ticker';
     const buttons = [bpmMinus10Btn, bpmPlus10Btn, bpmRandBtn];
-    buttons.forEach((btn) => {
-      if (!btn) return;
-      btn.disabled = !isInternal;
-      btn.style.display = isInternal ? '' : 'none';
-    });
+    return;
   }
 
   playBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (isPlaying) stop(); else start();
-  });
+  e.preventDefault();
+    togglePlayPause(); 
+});
+
+//
+  function togglePlayPause() {
+  if (isPlaying) {
+    stop(); 
+    if (socketOpen) {
+      socket.send(JSON.stringify({
+        type: "playstop",
+        status: "stop"
+      }));
+    }
+  } else {
+    start();
+    if (socketOpen) {
+      socket.send(JSON.stringify({
+        type: "playstop",
+        status: "start"
+      }));
+    }
+  }
+}
 
   if (stopBtn) stopBtn.addEventListener('click', stop);
+  window.__rrTogglePlayPause =togglePlayPause;
 
   window.addEventListener('keydown', (e) => {
     const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
     const isTyping = tag === 'input' || tag === 'textarea' || e.isComposing;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      if (isPlaying) stop(); else start();
-    } else if (!isTyping && (e.code === 'KeyP')) {
-      if (isPlaying) stop(); else start();
-    }
+    if (!isTyping && (e.code === 'KeyP')) togglePlayPause();
   });
+////////////
+bpmInput.addEventListener('change', () => {
+  const bpm = getBPM();
+  updateDerivedUI();
+  console.log ("changed BPM");
 
-  bpmInput.addEventListener('input', updateDerivedUI);
-  swingInput.addEventListener('input', updateDerivedUI);
+  if (socketOpen && !isRemoteUpdate) {
+    socket.send(JSON.stringify({
+      type: "bpm",
+      bpm: bpm
+    }));
+  }
+
+   bpmInput.blur(); 
+});
+ //swingInput.addEventListener('input', updateDerivedUI);
+  swingInput.addEventListener('input', () => {
+  updateDerivedUI();
+
+  if (socketOpen && !isRemoteUpdate) {
+    socket.send(JSON.stringify({
+      type: "swing",
+      swing: parseInt(swingInput.value, 10)
+    }));
+  }
+});
+
 
   if (bpmMinus10Btn) bpmMinus10Btn.addEventListener('click', () => {
-    if (currentMode !== 'internal-ticker') return;
     setBpmThroughInput(getBPM() - 10);
   });
+  
   if (bpmPlus10Btn) bpmPlus10Btn.addEventListener('click', () => {
-    if (currentMode !== 'internal-ticker') return;
     setBpmThroughInput(getBPM() + 10);
   });
+  
   if (bpmRandBtn) bpmRandBtn.addEventListener('click', () => {
-    if (currentMode !== 'internal-ticker') return;
     const v = 85 + Math.floor(Math.random() * (175 - 85 + 1));
     setBpmThroughInput(v);
   });
@@ -345,36 +386,47 @@
   };
 
   // Gestion des messages WebSocket entrants
-  socket.addEventListener('message', (event) => {
-    if (currentMode !== 'external-ticker') return;
-    const data = JSON.parse(event.data);
+socket.addEventListener('message', (event) => {
+  if (currentMode !== 'external-ticker') return;
 
-    if (data.type === 'tick') {
-      handleTick(data.count, data.bpm);
-    }
+  const data = JSON.parse(event.data);
 
-    // Mise à jour du BPM si présent dans le message
-    if (data.bpm !== undefined) {
-      bpmInput.value = data.bpm;
-      bpmOut.textContent = String(data.bpm);
-      updateDerivedUI(); // Met à jour les valeurs dérivées (ex: ms par 16ème)
+  if (data.type === 'tick') {
+    handleTick(data.count, data.bpm);
+  }
+
+  if (data.bpm !== undefined) {
+    const current = getBPM();
+
+    if (current !== data.bpm) {
+      isRemoteUpdate = true;
+
+      bpmInput.value = String(data.bpm);
+      updateDerivedUI();
+
+      isRemoteUpdate = false;
     }
-      if (data.type === 'randomize') { // envoie randomize si randomize vient de live
-      randomizeChannel.postMessage({
-        type: 'randomize_all'
-      });
-    }
-  });
+  }
+
+  if (data.type === 'randomize') {
+    randomizeChannel.postMessage({
+      type: 'randomize_all'
+    });
+    const v = 85 + Math.floor(Math.random() * (175 - 85 + 1)); // also randomize tempo
+    setBpmThroughInput(v);
+     console.log("new tempo "+v)
+  }
+});
 /////--- Randomize ALL Braodcast //////
    // Créer un BroadcastChannel pour communiquer avec les autres pages
     const randomizeChannel = new BroadcastChannel('randomize_channel');
 
     // Écouteur pour le bouton Randomize All
     document.getElementById("randomizeAll").addEventListener("click", function() {
-      if (currentMode === 'internal-ticker') {
+     // if (currentMode === 'internal-ticker') {
         const v = 85 + Math.floor(Math.random() * (175 - 85 + 1));
         setBpmThroughInput(v);
-      }
+     // }
       // Envoyer un message via le BroadcastChannel
       randomizeChannel.postMessage({
         type: 'randomize_all'
@@ -417,7 +469,6 @@
   function minuiSyncToggleLabel() {
     playBtn.textContent = minuiIsPlaying() ? 'Pause' : 'Play';
   }
-
 
 
 

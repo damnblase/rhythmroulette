@@ -115,7 +115,20 @@ function startWebSocketServer() {
             sendToMax('tick', msg.count, msg.bpm);
             return;
           }
-
+          if (msg.type === 'bpm') {
+            sendToMax('bpm',msg.bpm);
+            sendToMax('liveAPI', 'tempo', msg.bpm);
+            return;
+          }
+           if (msg.type === 'swing') {
+            sendToMax('swing',msg.swing);
+            return;
+          }
+            if (msg.type === 'playstop') {
+            sendToMax('liveAPI', "playstop",msg.status);
+            Max.post("received playstop");
+            return;
+          }
           // Autres messages non traités pour l'instant
           Max.post("Message reçu (non géré) :", JSON.stringify(msg));
 

@@ -9,6 +9,13 @@ function anything() {
     case 'tempo': {
       post('new liveAPI tempo', value);
       liveObject.set("tempo", value);
+      break;
+    }
+     case 'playstop': {
+      post('new liveAPI playstop', value);
+      if (value=="stop") {liveObject.call("stop_playing");}
+      else {liveObject.call("continue_playing")}
+      break; 
     }
   }
 }
