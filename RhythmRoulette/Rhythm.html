@@ -42,7 +42,7 @@
     <!-- 1. Transport and Global Settings -->
     <div class="section" id="transportSection">
       <div class="minui-row">
-        <label for="midiOutputSelect">Output</label>
+        <label for="midiOutputSelect">Out</label>
         <select id="midiOutputSelect"></select>
         <label for="midiCh">Ch</label>
         <select id="midiCh" aria-label="MIDI Channel"></select>
@@ -58,32 +58,38 @@
       </div>
 
       <div class="minui-row">
+        <label class="nowrap">Pattern</label>
         <button id="randomizeAll">Randomize Pattern</button>
-        <button id="randomizeAllParams">Randomize Preset</button>
         <button id="sendToLive">SendToLive</button>
       </div> 
       
     </div>
 
     <!-- 2. Preset Controls (with Probability Table inside) -->
-    <div class="section" id="presetControls"><div class="minui-row">
+    
+    <div class="section" id="presetControls">
+      <div class="minui-row">
+        <label class="nowrap">Preset</label>
+        <button id="randomizeAllParams">Randomize</button>
         <select id="presetSelect"></select>
-        <button id="removePreset">Remove Preset</button>
+        <button id="loadPresets">Load</button>
+        <button id="removePreset">Remove</button>
       </div>
 
       
       <div class="minui-row">
-        <input type="text" id="presetNameInput" value="preset" aria-label="Preset Name">
-        <button id="savePreset">Save Preset</button>
-        <button id="loadPresets">Load Presets</button>
+        <input type="text" id="presetNameInput" value="Enter preset name" aria-label="Preset Name">
+        <button id="savePreset">Save</button>
         <input type="file" id="loadPresetsFile" style="display:none" multiple>
       </div>
 
       <!-- Lock Preset toggle kept in DOM but hidden/removed from view -->
+      
       <div class="minui-row" style="display:none">
-        <label for="lockPreset">Lock Preset:</label>
+        <label for="lockPreset">Lock</label>
         <input type="checkbox" id="lockPreset">
       </div>
+     
 
       <div class="minui-row">
         <button id="toggleTable">Show Table</button>
@@ -95,12 +101,7 @@
 
     <!-- 3. Instrument Specific Controls -->
     <div class="section" id="instrumentControls">
-      <h2>Instrument Controls</h2>
 
-      <div class="minui-row">
-        <button id="muteAll">Mute All</button>
-        <button id="unmuteAll">Unmute All</button>
-      </div>
 
       
   <!-- Order: [Name] above [S][M] -->
@@ -144,9 +145,19 @@
         <label class="checkbox-label"><input type="checkbox" id="clapMuteCheckbox"> M</label>
       </div>
     </div>
+    
   </div>
 </div>
+
+
+      <div class="minui-row">
+        <button id="muteAll">Mute All</button>
+        <button id="unmuteAll">Unmute All</button>
+      </div>
+
   </div>
+
+  
 
   <script>
     /***** GLOBALS *****/

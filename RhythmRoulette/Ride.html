@@ -15,7 +15,7 @@
 
     <!-- MIDI Out -->
     <div class="row minui-row minui-keep-output">
-      <label for="outputSel">Output</label>
+      <label for="outputSel">Out</label>
       <select id="outputSel" disabled></select>
 
       <label for="channelSel">Ch</label>
@@ -26,22 +26,23 @@
 
     <!-- REGENERATE -->
     <div class="row minui-row minui-keep-regen">
+      <label class="nowrap">Pattern</label>  
       <button id="regenBtn" class="rand-btn" title="Randomize Pattern">⟳</button>
 
-      <label for="timingMode">Timing</label>
+      <label for="timingMode"></label>
       <label class="checkbox-label"><input id="timingMode" type="checkbox" /> <span>1 and 3</span></label>
 
     </div>
 
     <!-- NOTE DENSITY -->
     <div class="row minui-row minui-keep-density">
-      <label for="density">Note Density</label>
+      <label for="density">Density</label>
       <input id="density" type="range" min="1" max="100" step="1" value="70" />
     </div>
 
     <!-- VELOCITY FLOOR -->
     <div class="row minui-row minui-keep-velfloor">
-      <label for="velFloor">Velocity Floor</label>
+      <label for="velFloor">Vel. Floor</label>
       <input id="velFloor" type="range" min="27" max="127" step="1" value="45" />
     </div>
 
@@ -123,7 +124,7 @@
       updateOutputsSelect();
       outputSel.disabled = !midiOut;
       channelSel.disabled = !midiOut;
-      setStatus(midiOut ? 'Connected' : 'No MIDI outputs');
+      setStatus('');
     }catch(e){
       console.error(e);
       setStatus('MIDI permission denied');

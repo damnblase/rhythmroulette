@@ -274,6 +274,10 @@
     }
   }
 
+  function togglePlayPause() {
+    if (isPlaying) stop(); else start();
+  }
+
   // ===== Events =====
   function syncBpmButtons() {
     const isInternal = currentMode === 'internal-ticker';

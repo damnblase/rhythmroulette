@@ -14,34 +14,31 @@
     <section class="grid">
       <div class="card stack">
         <div class="row">
-          <label class="keepTextLabel">Output</label>
+          <label class="keepTextLabel">Out</label>
           <select id="midiOut" aria-label="MIDI Out"></select>
           <label for="midiCh">Ch</label>
           <select id="midiCh" aria-label="MIDI Channel"></select>
-          <span id="midiStatus" class="pill">MIDI: —</span>
+          <span id="midiStatus" class="pill"></span>
           <span class="pill" style="display:none"><span class="mono" id="chLabel"></span></span>
         </div>
         <div class="divider"></div>
-        <div class="row">
-          <button id="randProg" class="primary rand-btn" title="Randomize Progression">⟳</button>
-          <div class="flex-1 progression mono" id="progLabel"></div>
-        </div>
-        <div class="row">
-          <button id="randKey" class="ghost rand-btn" title="Randomize Key">⟳</button>
-          <label class="nowrap">Key</label>
-          <select id="keySelect"></select>
-          <label class="nowrap">Source</label>
-          <select id="keySource">
-            <option value="manual">Manual</option>
-            <option value="external">External</option>
-          </select>
-          <span class="pill" id="keyExtStatus" style="display:none">EXT</span>
 
+        <div class="row">
+          <label class="nowrap">Key</label>
+          <button id="randKey" class="ghost rand-btn" title="Randomize Key">⟳</button>
+          <select id="keySelect"></select>
+        </div>
+
+        <div class="row">
+          <label class="nowrap">Chords</label>  
+          <button id="randProg" class="primary rand-btn" title="Randomize Progression">⟳</button>
           <label class="nowrap keepCheckboxLabel"><input type="checkbox" id="add7"> 7</label>
           <label class="nowrap keepCheckboxLabel"><input type="checkbox" id="add9" disabled> 9</label>
+          <div class="flex-1 progression mono" id="progLabel"></div>
         </div>
+
         <div class="row">
-          <label class="nowrap">Loop Length</label>
+          <label class="nowrap">Length</label>
           <select id="loopLen">
             <option value="4">4 beats</option>
             <option value="8">8 beats</option>
@@ -50,10 +47,22 @@
           <span class="pill" id="loopInfo" style="display:none">—</span>
         </div>
         <div class="row">
-          <label class="nowrap keepLabel"><input type="checkbox" id="enableJitter" checked> Enable Jitter</label>
-          <label class="nowrap keepLabel">Max Jitter (ticks): <input type="number" id="jitterMax" min="0" max="8" step="1" value="4"></label>
+          <label class="nowrap">Jitter</label>
+          <label class="nowrap keepLabel"><input type="checkbox" id="enableJitter" checked></label>
+          <label class="nowrap">Max</label>
+          <label class="nowrap keepLabel"><input type="number" id="jitterMax" min="0" max="8" step="1" value="4"></label>
           <button id="randGroove" class="ghost rand-btn" title="Randomize Groove">⟳</button>
         </div>
+
+        <div class="row">
+          <label class="nowrap">Source</label>
+          <select id="keySource">
+            <option value="manual">Manual</option>
+            <option value="external">External</option>
+          </select>
+          <span class="pill" id="keyExtStatus" style="display:none">EXT</span>
+        </div>
+
       </div>
     </section>
   </div>
@@ -291,7 +300,7 @@ function pcToNearestMidi(pc, lo=54, hi=66){
       try{
         this.access = await navigator.requestMIDIAccess({ sysex:false });
         this.refreshOutputs();
-        document.getElementById('midiStatus').textContent = 'Connected';
+        document.getElementById('midiStatus').textContent = '';
         // Rescan a few times in case ports appear shortly after permission.
         let tries = 0;
         const kick = () => {

@@ -10,29 +10,31 @@
 <body>
   <div class="wrap">
     <div class="row">
-      <label for="midiIn">Input</label>
+      <label for="midiIn">In</label>
       <select id="midiIn" aria-label="MIDI Input">
         <option value="">(loading…)</option>
       </select>
 
-      <label for="midiInCh">CH</label>
+      <label for="midiInCh">Ch</label>
       <select id="midiInCh" aria-label="MIDI Input Channel"></select>
+      </div>
 
-      <label for="midiOut">Output</label>
+    <div class="row">
+      <label for="midiOut">Out</label>
       <select id="midiOut" aria-label="MIDI Output">
         <option value="">(loading…)</option>
       </select>
 
-      <label for="midiOutCh">CH</label>
+      <label for="midiOutCh">Ch</label>
       <select id="midiOutCh" aria-label="MIDI Output Channel"></select>
 
-      <span id="midiStatus" class="pill">MIDI: —</span>
+      <span id="midiStatus" class="pill"></span>
     </div>
 
     <div class="row">
-
+<label class="nowrap">Pattern</label>
       <button id="randBtn" class="rand-btn" title="Randomize Pattern">⟳</button>
-      <label for="patternLen">Pattern Length</label>
+      <label for="patternLen">Length</label>
       <select id="patternLen" aria-label="Pattern Length">
         <option value="8">8</option>
         <option value="16">16</option>
@@ -43,11 +45,9 @@
     <div class="row">
   <label for="chordTones">Chord Tones</label>
   <input id="chordTones" type="range" min="1" max="6" step="1" value="3" />
-  <span class="pill"><span id="chordTonesVal" class="mono">3</span></span>
 
   <label for="density">Density</label>
   <input id="density" type="range" min="0" max="100" value="50" />
-  <span class="pill"><span id="densityVal" class="mono">6</span></span>
 
   <label for="octJump">Octave Jump</label>
   <input id="octJump" type="range" min="0" max="100" value="0" />
@@ -210,7 +210,7 @@
         this.refreshInputs();
         this.refreshOutputs();
 
-        el.midiStatus.textContent = 'Connected';
+        el.midiStatus.textContent = '';
       } catch (e) {
         el.midiStatus.textContent = 'MIDI: unavailable';
         console.warn('Web MIDI init failed', e);
@@ -1116,9 +1116,6 @@ function syncSliders({ regeneratePattern=false } = {}) {
   state.density = clamp(parseInt(el.density.value,10)||0, 0, 100);
   state.octaveJump = clamp(parseInt(el.octJump.value,10)||0, 0, 100);
   state.legato = clamp(parseInt(el.legato.value,10)||0, 0, 100);
-
-  el.chordTonesVal.textContent = String(state.chordTonesLevel|0);
-  el.densityVal.textContent = String(densityToHits(state.density));
 
   // Null-safe (these spans are not present in this UI)
   if (el.octJumpVal) el.octJumpVal.textContent = String(state.octaveJump|0);
