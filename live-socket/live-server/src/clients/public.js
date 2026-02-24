@@ -54,28 +54,69 @@ async function main($container) {
   const global = await client.stateManager.attach('global');
 
   function renderApp() {
-    console.log(global.get('availableNotes'))
-    render(html`
-      <div class="simple-layout">
-        <p>Hello ${client.config.app.name}!</p>
-        <div style="padding-bottom: 4px">
-          <sc-text>Current BPM</sc-text>
-          <sc-slider
-            value=${global.get('tempo')}
-            min=0
-            max=400
-            number-box=true
-          ></sc-slider>
+    const state = global.get('state')
+    const SSID = 'ISMM';
+    const password = '12345678'
+    const playerURL = 'http://romainblase.local:8000'
+    switch(state) {
+      case 'init': {
+        render(html`
+          <div style="padding-bottom: 4px; display: flex; flex-direction: row">
+          <div style="padding-bottom: 4px; padding-left:15px; flex: 0.5">
+            <h2>1 : Connect to WiFi</h2>
+            <div style="padding-bottom: 4px;">
+              <sc-text style="width: 400px; height: 60px; font-size: 22px;">SSID: ${SSID}</sc-text>
+            </div>
+            <div style="padding-bottom: 4px;">
+              <sc-text style="width: 400px; height: 60px; font-size: 22px;">Password: ${password}</sc-text>
+            </div>
+            <div style="padding-bottom: 4px;">
+              <sc-qrcode
+                style="height: 400px; width: 400px"
+                value="WIFI:S:${SSID};T:WPA;P:${password};H:false;"
+                ></sc-qrcode>
+              </div>
+            </div>
+            <div style="padding-bottom: 4px; padding-left:15px; flex: 0.5">
+              <h2>2 : Go to this website</h2>
+              <div style="padding-bottom: 4px;">
+                <div style="padding-bottom: 4px">
+                  <sc-text> </sc-text>
+                </div>
+                <div style="padding-bottom: 4px">
+                  <sc-text style="width: 400px; height: 60px; font-size: 22px;">${playerURL}</sc-text>
+                </div>
+              </div>
+              <sc-qrcode
+              style="height: 400px; width: 400px"
+              value=${playerURL}
+            ></sc-qrcode>
+          </div>
         </div>
-        <div style="padding-bottom: 4px">
-          <sc-text>Current key</sc-text>
-          <sc-keyboard
-          range=13
-          mode=monophonic
-          ></sc-keyboard>
+        `, $container);
+      } break;
+      case 'votes': {
+        render(html`
+        <div class="simple-layout">
+          <p>Hello ${client.config.app.name}!</p>
+          <div style="padding-bottom: 4px">
+            <sc-text>Current BPM</sc-text>
+            <sc-slider
+              value=${global.get('tempo')}
+              min=0
+              max=400
+              number-box=true
+            ></sc-slider>
+          </div>
+          <div style="padding-bottom: 4px">
+            <sc-text>Current key</sc-text>
+            <sc-keyboard
+              range=13
+              mode=monophonic
+            ></sc-keyboard>
+          </div>
+          <sw-credits .infos="${client.config.app}"></sw-credits>
         </div>
-        <sw-credits .infos="${client.config.app}"></sw-credits>
-      </div>
         <div style="padding-bottom: 4px">
           <sc-text>Current style</sc-text>
           <sc-tab
@@ -87,7 +128,48 @@ async function main($container) {
         </div>
         <sw-credits .infos="${client.config.app}"></sw-credits>
       </div>
-    `, $container);
+      `, $container);
+      } break;
+      case 'synth': {
+        render(html`<sc-text>volume up !</sc-text>`, $container)
+      } break;
+      case 'end': {
+        render(html`<sc-text>thank you, you can put your phone in your pocket and enjoy the rest of the show</sc-text>`, $container)
+      };
+    };
+    // render(html`
+    //   <div class="simple-layout">
+    //     <p>Hello ${client.config.app.name}!</p>
+    //     <div style="padding-bottom: 4px">
+    //       <sc-text>Current BPM</sc-text>
+    //       <sc-slider
+    //         value=${global.get('tempo')}
+    //         min=0
+    //         max=400
+    //         number-box=true
+    //       ></sc-slider>
+    //     </div>
+    //     <div style="padding-bottom: 4px">
+    //       <sc-text>Current key</sc-text>
+    //       <sc-keyboard
+    //       range=13
+    //       mode=monophonic
+    //       ></sc-keyboard>
+    //     </div>
+    //     <sw-credits .infos="${client.config.app}"></sw-credits>
+    //   </div>
+    //     <div style="padding-bottom: 4px">
+    //       <sc-text>Current style</sc-text>
+    //       <sc-tab
+    //         style="width: auto;"
+    //         orientation=vertical
+    //         .options=${availableStyles}
+    //         value=${global.get('style')}
+    //       ></sc-tab>
+    //     </div>
+    //     <sw-credits .infos="${client.config.app}"></sw-credits>
+    //   </div>
+    // `, $container);
   }
 
   renderApp();
