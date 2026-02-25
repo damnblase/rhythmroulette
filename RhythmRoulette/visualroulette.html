@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Visual Roulette — MIDI Segment Flasher (Buses 1–5)</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: #000; /* replaced at runtime with gradient */
+    }
+
+    /* Fullscreen container shows the background gradient */
+    #segments {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background: #000; /* set dynamically */
+      overflow: hidden;
+    }
+
+    /* Feathered "blob" segments */
+    .seg {
+      position: absolute;
+      background: transparent; /* show gradient when "off" */
+      transition: background-color 140ms ease-out;
+      will-change: background-color;
+
+      border-radius: 9999px;
+      -webkit-mask-image: radial-gradient(closest-side, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%);
+      mask-image: radial-gradient(closest-side, rgba(0,0,0,1) 62%, rgba(0,0,0,0) 100%);
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-size: 100% 100%;
+      mask-size: 100% 100%;
+      -webkit-mask-position: center;
+      mask-position: center;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .seg { transition: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="segments">
+    <div class="seg" id="seg0"></div>
+    <div class="seg" id="seg1"></div>
+    <div class="seg" id="seg2"></div>
+    <div class="seg" id="seg3"></div>
+    <div class="seg" id="seg4"></div>
+  </div>
+
+  <script>
+    (() => {
+      const segmentsEl = document.getElementById('segments');
+      const segEls = Array.from({ length: 5 }, (_, i) => document.getElementById(`seg${i}`));
+
+      // Flash timers per segment for clean retrigger
+      const flashTimers = new Array(5).fill(null);
+
+      // MIDI state
+      let midiAccess = null;
+
+      /** @type {(MIDIInput|null)[]} */
+      let assignedInputs = new Array(5).fill(null);
+
+      // ---------- Color system (Corrected) ----------
+      // Requirements:
+      // - On EVERY regeneration (load + any randomize trigger):
+      //   1) Pick TWO highly contrasting colors (endpoints A and B).
+      //   2) Apply a linear-gradient(A -> B) as background, with randomized angle.
+      //   3) Flash palette must be exactly: [A, 3 colors interpolated strictly between A and B, B]
+      //   4) The interior colors must be derived from the SAME gradient space.
+      //
+      // Implementation detail:
+      // CSS gradients interpolate in sRGB; to match the background exactly,
+      // we compute endpoints in HSL (for contrast), then interpolate interior colors in sRGB.
+      let palette = new Array(5).fill('rgb(255 255 255)');
+      let gradientAngleDeg = 0;
+      let gradientEndpoints = { a: 'rgb(0 0 0)', b: 'rgb(255 255 255)' };
+
+      function generatePaletteAndBackground() {
+        // 1) Choose two contrasting endpoints (in HSL), then convert to sRGB for CSS consistency
+        const pair = randomHighContrastPairHSL(); // {a:{h,s,l}, b:{h,s,l}}
+
+        const aRGB = hslToRgb(pair.a.h, pair.a.s, pair.a.l);
+        const bRGB = hslToRgb(pair.b.h, pair.b.s, pair.b.l);
+
+        const cA = rgbStr(aRGB.r, aRGB.g, aRGB.b); // Endpoint A (exact)
+        const cB = rgbStr(bRGB.r, bRGB.g, bRGB.b); // Endpoint B (exact)
+
+        // 2) Randomize gradient angle and apply background using the SAME endpoints
+        gradientAngleDeg = Math.floor(randRange(0, 360));
+        gradientEndpoints = { a: cA, b: cB };
+        applyBackgroundGradient();
+
+        // 3) Build palette: A, 3 interior points strictly within (0,1), B
+        // Use sRGB interpolation so these colors truly "belong" to the same gradient.
+        const ts = [
+          randRange(0.12, 0.88),
+          randRange(0.12, 0.88),
+          randRange(0.12, 0.88)
+        ];
+
+        const c1 = lerpRgbStr(aRGB, bRGB, ts[0]);
+        const c2 = lerpRgbStr(aRGB, bRGB, ts[1]);
+        const c3 = lerpRgbStr(aRGB, bRGB, ts[2]);
+
+        palette = [cA, c1, c2, c3, cB];
+
+        // Assign the 5 palette colors to the 5 segments (shuffled placement is OK;
+        // it still guarantees exactly two segments use endpoints, and three use interior colors).
+        applySegmentFlashColorsFromPalette();
+      }
+
+      function applyBackgroundGradient() {
+        const { a, b } = gradientEndpoints;
+        const grad = `linear-gradient(${gradientAngleDeg}deg, ${a}, ${b})`;
+        segmentsEl.style.background = grad;
+        document.body.style.background = grad;
+      }
+
+      function applySegmentFlashColorsFromPalette() {
+        const assigned = shuffle(palette);
+        segEls.forEach((el, i) => { el.dataset.flashColor = assigned[i]; });
+      }
+
+      // Pick two random colors that are "highly contrasted" (HSL space for selection only)
+      function randomHighContrastPairHSL() {
+        const h1 = Math.floor(randRange(0, 360));
+        const hueJitter = randRange(-25, 25);
+        let h2 = (h1 + 180 + hueJitter) % 360;
+        if (h2 < 0) h2 += 360;
+
+        const s1 = Math.floor(randRange(75, 95));
+        const s2 = Math.floor(randRange(75, 95));
+
+        const l1 = Math.floor(randRange(35, 50));
+        const l2 = Math.floor(randRange(60, 75));
+
+        const swap = Math.random() < 0.5;
+        return swap
+          ? { a: { h: h1, s: s1, l: l2 }, b: { h: h2, s: s2, l: l1 } }
+          : { a: { h: h1, s: s1, l: l1 }, b: { h: h2, s: s2, l: l2 } };
+      }
+
+      // Convert HSL (degrees, %, %) to sRGB 0..255
+      function hslToRgb(hDeg, sPct, lPct) {
+        const h = ((hDeg % 360) + 360) % 360 / 360;
+        const s = clamp01(sPct / 100);
+        const l = clamp01(lPct / 100);
+
+        if (s === 0) {
+          const v = Math.round(l * 255);
+          return { r: v, g: v, b: v };
+        }
+
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+
+        const r = hue2rgb(p, q, h + 1/3);
+        const g = hue2rgb(p, q, h);
+        const b = hue2rgb(p, q, h - 1/3);
+
+        return {
+          r: Math.round(r * 255),
+          g: Math.round(g * 255),
+          b: Math.round(b * 255)
+        };
+      }
+
+      function hue2rgb(p, q, t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      }
+
+      function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+      function rgbStr(r, g, b) {
+        return `rgb(${r} ${g} ${b})`;
+      }
+
+      function lerpRgbStr(a, b, t) {
+        const r = Math.round(lerp(a.r, b.r, t));
+        const g = Math.round(lerp(a.g, b.g, t));
+        const bb = Math.round(lerp(a.b, b.b, t));
+        return rgbStr(r, g, bb);
+      }
+
+      // ---------- Layout: random 5-rectangle partition (guillotine splits) ----------
+      function regeneratePartition() {
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+
+        let rects = [{ x: 0, y: 0, w: W, h: H }];
+
+        const MIN_SIZE = 60;
+        let guard = 0;
+
+        while (rects.length < 5 && guard++ < 200) {
+          const idx = pickRectIndexByArea(rects);
+          const r = rects[idx];
+
+          const canSplitV = r.w >= MIN_SIZE * 2;
+          const canSplitH = r.h >= MIN_SIZE * 2;
+          if (!canSplitV && !canSplitH) continue;
+
+          let splitVertical;
+          if (canSplitV && canSplitH) {
+            const bias = (r.w > r.h) ? 0.6 : 0.4;
+            splitVertical = Math.random() < bias;
+          } else {
+            splitVertical = canSplitV;
+          }
+
+          const ratio = randRange(0.30, 0.70);
+
+          let a, b;
+          if (splitVertical) {
+            const wA = Math.round(r.w * ratio);
+            const wB = r.w - wA;
+            if (wA < MIN_SIZE || wB < MIN_SIZE) continue;
+            a = { x: r.x, y: r.y, w: wA, h: r.h };
+            b = { x: r.x + wA, y: r.y, w: wB, h: r.h };
+          } else {
+            const hA = Math.round(r.h * ratio);
+            const hB = r.h - hA;
+            if (hA < MIN_SIZE || hB < MIN_SIZE) continue;
+            a = { x: r.x, y: r.y, w: r.w, h: hA };
+            b = { x: r.x, y: r.y + hA, w: r.w, h: hB };
+          }
+
+          rects.splice(idx, 1, a, b);
+        }
+
+        if (rects.length !== 5) rects = fallbackFiveRects(W, H);
+        rects = shuffle(rects);
+
+        for (let i = 0; i < 5; i++) {
+          const el = segEls[i];
+          const r = rects[i];
+          el.style.left = r.x + 'px';
+          el.style.top = r.y + 'px';
+          el.style.width = r.w + 'px';
+          el.style.height = r.h + 'px';
+          el.style.backgroundColor = 'transparent'; // show gradient when idle
+        }
+      }
+
+      function fallbackFiveRects(W, H) {
+        const c1 = Math.round(W * 0.25);
+        const c3 = Math.round(W * 0.25);
+        const c2 = W - c1 - c3;
+
+        const h1 = Math.round(H * 0.33);
+        const h2 = Math.round(H * 0.34);
+        const h3 = H - h1 - h2;
+
+        return [
+          { x: 0,        y: 0,         w: c1, h: H },
+          { x: c1,       y: 0,         w: c2, h: h1 },
+          { x: c1,       y: h1,        w: c2, h: h2 },
+          { x: c1,       y: h1 + h2,   w: c2, h: h3 },
+          { x: c1 + c2,  y: 0,         w: c3, h: H },
+        ];
+      }
+
+      function pickRectIndexByArea(rects) {
+        const areas = rects.map(r => Math.max(1, r.w * r.h));
+        const total = areas.reduce((x, y) => x + y, 0);
+        let t = Math.random() * total;
+        for (let i = 0; i < rects.length; i++) {
+          t -= areas[i];
+          if (t <= 0) return i;
+        }
+        return rects.length - 1;
+      }
+
+      // ---------- Flash ----------
+      function flashSegment(segIndex) {
+        const el = segEls[segIndex];
+        const color = el.dataset.flashColor || 'rgb(255 255 255)';
+
+        if (flashTimers[segIndex]) clearTimeout(flashTimers[segIndex]);
+
+        el.style.transition = 'none';
+        el.style.backgroundColor = color;
+
+        // force reflow so next transition applies
+        void el.offsetHeight;
+
+        el.style.transition = 'background-color 140ms ease-out';
+        flashTimers[segIndex] = setTimeout(() => {
+          el.style.backgroundColor = 'transparent';
+          flashTimers[segIndex] = null;
+        }, 90);
+      }
+
+      // ---------- UI (removed/no-op) ----------
+      function setStatus(_) {}
+      function renderMapping() {}
+
+      // ---------- MIDI ----------
+      function isNoteOn(data) {
+        if (!data || data.length < 3) return false;
+        const status = data[0] & 0xFF;
+        const type = status & 0xF0;  // 0x90..0x9F = NOTE ON (any channel)
+        const vel = data[2] & 0x7F;
+        return (type === 0x90) && (vel > 0); // vel==0 treated as NOTE OFF → no trigger
+      }
+
+      function detachAllAssignedInputs() {
+        for (let i = 0; i < 5; i++) {
+          const inp = assignedInputs[i];
+          if (inp) inp.onmidimessage = null;
+          assignedInputs[i] = null;
+        }
+      }
+
+      // Assign by Bus 1..5 names (listens to all MIDI channels within each bus)
+      function assignBuses1to5Inputs() {
+        if (!midiAccess) return;
+
+        detachAllAssignedInputs();
+
+        const inputs = Array.from(midiAccess.inputs.values());
+
+        function findInputForBus(busNum) {
+          const reIac = new RegExp(`\\bIAC\\b.*\\bBus\\s*${busNum}\\b`, 'i');
+          const reBus = new RegExp(`\\b(bus|port)\\s*${busNum}\\b`, 'i');
+          return inputs.find(inp => inp && inp.name && reIac.test(inp.name))
+              || inputs.find(inp => inp && inp.name && reBus.test(inp.name))
+              || null;
+        }
+
+        for (let i = 0; i < 5; i++) {
+          assignedInputs[i] = findInputForBus(i + 1);
+        }
+
+        for (let segIndex = 0; segIndex < 5; segIndex++) {
+          const input = assignedInputs[segIndex];
+          if (!input) continue;
+
+          input.onmidimessage = (e) => {
+            if (isNoteOn(e.data)) {
+              // IMPORTANT: no channel filtering; any Note On on this bus triggers this segment
+              flashSegment(segIndex);
+            }
+          };
+        }
+
+        renderMapping();
+      }
+
+      function initMIDI() {
+        if (!('requestMIDIAccess' in navigator)) {
+          setStatus('No WebMIDI support in this browser.');
+          detachAllAssignedInputs();
+          renderMapping();
+          return;
+        }
+
+        setStatus('Requesting MIDI access…');
+        navigator.requestMIDIAccess({ sysex: false }).then(access => {
+          midiAccess = access;
+          assignBuses1to5Inputs();
+
+          midiAccess.onstatechange = () => {
+            assignBuses1to5Inputs();
+          };
+        }).catch(err => {
+          console.warn(err);
+          setStatus('No MIDI access (permission denied or unavailable).');
+          detachAllAssignedInputs();
+          renderMapping();
+        });
+      }
+
+      // ---------- Full regeneration (layout + palette + background angle) ----------
+      function fullVisualReset() {
+        for (let i = 0; i < 5; i++) {
+          if (flashTimers[i]) {
+            clearTimeout(flashTimers[i]);
+            flashTimers[i] = null;
+          }
+        }
+
+        // Colors regenerated here (and only here) so background + flashes always match
+        generatePaletteAndBackground();
+
+        regeneratePartition();
+
+        for (let i = 0; i < 5; i++) {
+          segEls[i].style.backgroundColor = 'transparent';
+        }
+      }
+
+      // ---------- External triggers ----------
+      // 1) Existing direct command channel: "visualroulette-command" -> regenerate
+      try {
+        const regenBC = new BroadcastChannel('visualroulette-command');
+        regenBC.onmessage = (ev) => {
+          const msg = ev.data;
+          const isRegen = (msg === 'regenerate')
+            || (msg && typeof msg === 'object' && (msg.type === 'regenerate' || msg.cmd === 'regenerate'));
+          if (isRegen) fullVisualReset();
+        };
+      } catch (_) {}
+
+      // 2) Cadence "randomize all": listens for { type: "randomize_all" } on "randomize_channel"
+      try {
+        const cadenceRandBC = new BroadcastChannel('randomize_channel');
+        cadenceRandBC.onmessage = (ev) => {
+          const d = ev.data;
+          if (d && typeof d === 'object' && d.type === 'randomize_all') {
+            fullVisualReset();
+          }
+        };
+      } catch (_) {}
+
+      // Resize: regenerate partition (keep same palette/gradient for session)
+      let resizeT = null;
+      window.addEventListener('resize', () => {
+        if (resizeT) clearTimeout(resizeT);
+        resizeT = setTimeout(() => {
+          regeneratePartition();
+          resizeT = null;
+        }, 80);
+      });
+
+      // Utilities
+      function randRange(a, b) { return a + Math.random() * (b - a); }
+      function lerp(a, b, t) { return a + (b - a) * t; }
+      function shuffle(arr) {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      // Boot
+      // Ensure initial load follows the exact same regeneration path as randomize triggers
+      fullVisualReset();
+      initMIDI();
+    })();
+  </script>
+</body>
+</html>

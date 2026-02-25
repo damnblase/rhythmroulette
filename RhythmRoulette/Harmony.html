@@ -32,6 +32,7 @@
         <div class="row">
           <label class="nowrap">Chords</label>  
           <button id="randProg" class="primary rand-btn" title="Randomize Progression">⟳</button>
+          <select id="progSelect" aria-label="Chord Progression"></select>
           <label class="nowrap keepCheckboxLabel"><input type="checkbox" id="add7"> 7</label>
           <label class="nowrap keepCheckboxLabel"><input type="checkbox" id="add9" disabled> 9</label>
           <div class="flex-1 progression mono" id="progLabel"></div>
@@ -85,12 +86,98 @@
       return clamped-1;
     }
 (() => {
-  // -------------------- User-specified minor-only progression library --------------------
-  const PROGRESSIONS = [
-    ["i","iv"], ["i","v"], ["iv","v"], ["v","iv"],
-    ["i","iv","v"], ["i","v","iv"], ["iv","i","v"], ["iv","v","i"], ["v","i","iv"], ["v","iv","i"],
-    ["i","iv","v","i"], ["i","v","iv","i"], ["iv","i","v","iv"], ["v","i","iv","v"], ["i","iv","i","v"], ["iv","v","iv","i"], ["v","iv","v","i"],
-  ];
+// Expanded minor progression library (i, iv, v, ♭VII, VI, III, ♭II)
+// Rules: 2–4 chords, at least 2 distinct chords, no triple repeats
+
+const PROGRESSIONS = [
+
+  // ---------------- 2-CHORD ----------------
+  ["i","iv"],
+  ["i","v"],
+  ["i","VI"],
+  ["i","♭VII"],
+  ["i","III"],
+
+  ["iv","i"],
+  ["iv","v"],
+  ["iv","VI"],
+
+  ["v","i"],
+  ["v","VI"],
+  ["v","♭VII"],
+
+  ["VI","i"],
+  ["VI","III"],
+  ["VI","♭VII"],
+
+  ["♭VII","i"],
+  ["♭VII","III"],
+
+  ["III","VI"],
+  ["III","i"],
+
+  ["♭II","v"],
+  ["♭II","i"],
+
+
+  // ---------------- 3-CHORD ----------------
+  ["i","iv","v"],
+  ["i","VI","v"],
+  ["i","♭VII","i"],
+  ["i","III","VI"],
+  ["i","♭VII","III"],
+
+  ["iv","v","i"],
+  ["iv","VI","i"],
+
+  ["v","i","VI"],
+  ["v","VI","i"],
+  ["v","♭VII","i"],
+
+  ["VI","III","♭VII"],
+  ["VI","v","i"],
+  ["VI","♭VII","i"],
+
+  ["♭VII","VI","i"],
+  ["♭VII","III","VI"],
+  ["♭VII","v","i"],
+
+  ["III","VI","i"],
+  ["III","♭VII","i"],
+
+  ["♭II","v","i"],
+  ["♭II","i","v"],
+
+
+  // ---------------- 4-CHORD ----------------
+  ["i","iv","v","i"],
+  ["i","VI","III","♭VII"],
+  ["i","♭VII","VI","v"],
+  ["i","III","VI","v"],
+  ["i","VI","♭VII","i"],
+
+  ["iv","VI","v","i"],
+  ["iv","v","♭VII","i"],
+
+  ["v","VI","♭VII","i"],
+  ["v","♭VII","VI","i"],
+
+  ["VI","III","♭VII","i"],
+  ["VI","v","i","♭VII"],
+  ["VI","♭VII","i","v"],
+
+  ["♭VII","VI","III","i"],
+  ["♭VII","v","i","VI"],
+  ["♭VII","III","VI","v"],
+
+  ["III","VI","♭VII","i"],
+  ["III","♭VII","v","i"],
+
+  ["♭II","v","i","VI"],
+  ["♭II","v","♭VII","i"],
+  ["♭II","i","VI","v"]
+
+];
 
 // -------------------- Key & Harmony (MAJOR + MINOR) --------------------
 const KEYS = (() => {
@@ -157,49 +244,73 @@ function parseRomanToken(tok){
 }
 
 // -------------------- Build Chord MIDI --------------------
+// Fixes:
+// 1) In MINOR, degrees 3/6/7 are already flatted in the scale. So ♭III/♭VI/♭VII should NOT become double-flat.
+// 2) Build chord tones by QUALITY intervals (maj/min/dim/aug), not by stacking diatonic thirds from the key scale.
+//    This makes ♭VII in C minor -> Bb–D–F (major), as expected.
 function buildChordMidi(token, key, add7=false, add9=false){
-  const t = parseRomanToken(token);
-  const scale = key.scale; // tableau de 7 notes pour le mode
-  const degIndex = (t.degree - 1) % 7;
-  let rootPC = (key.tonic + scale[degIndex] + t.acc) % 12;
-  if (rootPC < 0) rootPC += 12;
+  const t0 = parseRomanToken(token);
 
-  // Triade basée sur l'échelle
-  const thirdIndex = (degIndex + 2) % 7;
-  const fifthIndex = (degIndex + 4) % 7;
-  let triad = [
-    rootPC,
-    (key.tonic + scale[thirdIndex] + t.acc) % 12,
-    (key.tonic + scale[fifthIndex] + t.acc) % 12
-  ];
-
-  // Ajuster les intervalles pour les altérations (dim/aug)
-  if (t.quality === 'dim') triad[2] = (triad[0] + 6) % 12;
-  if (t.quality === 'aug') triad[2] = (triad[0] + 8) % 12;
-
-  // Ajouter 7 et 9 si demandé
-  let tones = triad.slice();
-  if (add7) {
-    let seventh;
-    if (t.quality === 'dim') seventh = (triad[0]+10)%12;
-    else if (t.isUpper && t.degree===5 && t.acc===0) seventh = (triad[0]+10)%12;
-    else if (t.quality==='min') seventh = (triad[0]+10)%12;
-    else seventh = (triad[0]+11)%12;
-    tones.push(seventh);
-    if (add9) tones.push((triad[0]+14)%12);
+  // Effective accidental (prevents double-flat for minor’s b3/b6/b7 if user writes ♭III/♭VI/♭VII)
+  let accEff = t0.acc;
+  if (key.mode === 'minor' && accEff === -1 && (t0.degree === 3 || t0.degree === 6 || t0.degree === 7)){
+    accEff = 0;
   }
 
-  // Convertir en notes MIDI dans la plage
+  const scale = key.scale;
+  const degIndex = (t0.degree - 1) % 7;
+
+  let rootPC = (key.tonic + scale[degIndex] + accEff) % 12;
+  if (rootPC < 0) rootPC += 12;
+
+  // Triad by quality intervals
+  let thirdPC, fifthPC;
+  if (t0.quality === 'maj'){
+    thirdPC = (rootPC + 4) % 12;
+    fifthPC = (rootPC + 7) % 12;
+  } else if (t0.quality === 'min'){
+    thirdPC = (rootPC + 3) % 12;
+    fifthPC = (rootPC + 7) % 12;
+  } else if (t0.quality === 'dim'){
+    thirdPC = (rootPC + 3) % 12;
+    fifthPC = (rootPC + 6) % 12;
+  } else { // 'aug'
+    thirdPC = (rootPC + 4) % 12;
+    fifthPC = (rootPC + 8) % 12;
+  }
+
+  const triad = [rootPC, thirdPC, fifthPC];
+
+  // Add 7 and 9 if requested
+  let tones = triad.slice();
+  if (add7) {
+    const isDominant = (t0.isUpper && t0.degree === 5 && accEff === 0);
+    let seventh;
+    if (t0.quality === 'dim') seventh = (rootPC + 10) % 12;         // m7 over dim triad (half-dim-ish)
+    else if (isDominant)       seventh = (rootPC + 10) % 12;         // dominant 7
+    else if (t0.quality === 'min') seventh = (rootPC + 10) % 12;     // minor 7
+    else                       seventh = (rootPC + 11) % 12;         // maj7
+    tones.push(seventh);
+    if (add9) tones.push((rootPC + 14) % 12);
+  }
+
+  // Convert to MIDI notes in range
   const rootBase = nearestInRange(rootPC, 50, 60);
   let notes = tones.map(n => rootBase + ((n - rootPC + 12) % 12));
 
-  // Ajuster si hors limites
+  // Range safety
   let maxN = Math.max(...notes), minN = Math.min(...notes);
   if (maxN > 84) notes = notes.map(n => n-12);
   if (minN < 45) notes = notes.map(n => n+12);
 
+  // Deduplicate pitch classes
   const seen = new Set();
-  notes = notes.filter(n => { const pc = (n%12+12)%12; if (seen.has(pc)) return false; seen.add(pc); return true; });
+  notes = notes.filter(n => {
+    const pc = (n%12+12)%12;
+    if (seen.has(pc)) return false;
+    seen.add(pc);
+    return true;
+  });
 
   return notes;
 }
@@ -519,6 +630,7 @@ function publishKey(k){
   const el = {
     midiOut: document.getElementById('midiOut'),
     randProg: document.getElementById('randProg'),
+    progSelect: document.getElementById('progSelect'),
     randKey: document.getElementById('randKey'),
     keySelect: document.getElementById('keySelect'),
     add7: document.getElementById('add7'),
@@ -542,6 +654,17 @@ function publishKey(k){
   }
   function fmtProg(p){ return p.join(' – '); }
   function refreshProgLabel(){ el.progLabel.textContent = `[ ${fmtProg(state.progression)} ]  (${state.progression.length} chords)`; }
+function refreshProgSelect(){
+    if (!el.progSelect) return;
+    el.progSelect.innerHTML = '';
+    PROGRESSIONS.forEach((p, idx)=>{
+      const o = document.createElement('option');
+      o.value = String(idx);
+      o.textContent = `[ ${fmtProg(p)} ]`;
+      el.progSelect.appendChild(o);
+    });
+    el.progSelect.value = String(PROGRESSIONS.indexOf(state.progression));
+  }
   function refreshLoopUI(){
     el.loopLen.value = String(state.loopBeats);
     if (el.st_loopLen) el.st_loopLen.textContent = state.loopBeats;
@@ -586,6 +709,7 @@ function publishKey(k){
         // Repeat patterns must persist loop-to-loop and change only when progression changes.
         if (progressionChanged){
           regenerateRepeatOffsetsForCurrentProgression();
+          refreshProgSelect();
         }
         refreshProgLabel();
         refreshLoopUI();
@@ -806,20 +930,28 @@ function publishKey(k){
   }
 
   function describeChord(token, key, add7, add9){
-    const t = parseRomanToken(token);
-    const degIndex = (t.degree - 1) % 7;
+    const t0 = parseRomanToken(token);
+
+    let accEff = t0.acc;
+    if (key.mode === 'minor' && accEff === -1 && (t0.degree === 3 || t0.degree === 6 || t0.degree === 7)){
+      accEff = 0;
+    }
+
+    const degIndex = (t0.degree - 1) % 7;
     const baseScale = key.scale;
-    let rootPC = (key.tonic + baseScale[degIndex] + t.acc) % 12; if (rootPC<0) rootPC+=12;
+    let rootPC = (key.tonic + baseScale[degIndex] + accEff) % 12; if (rootPC<0) rootPC+=12;
     const name12 = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
     const rootName = name12[rootPC];
-    const isDominant = t.isUpper && t.degree===5 && t.acc===0;
-    let q = (t.quality==='maj' ? '' : t.quality==='min' ? 'm' : t.quality==='dim' ? 'dim' : 'aug');
+
+    const isDominant = t0.isUpper && t0.degree===5 && accEff===0;
+    let q = (t0.quality==='maj' ? '' : t0.quality==='min' ? 'm' : t0.quality==='dim' ? 'dim' : 'aug');
     if (q==='dim') q='m♭5';
+
     let ext = '';
     if (add7){
-      if (t.quality==='dim') ext='7♭5';
+      if (t0.quality==='dim') ext='7♭5';
       else if (isDominant) ext='7';
-      else if (t.quality==='min') ext='7';
+      else if (t0.quality==='min') ext='7';
       else ext='maj7';
       if (add9) ext += ' (add9)';
     }
@@ -890,6 +1022,13 @@ function publishKey(k){
       state.pending.rejitter = true;
     });
 
+    el.progSelect.addEventListener('change', e => {
+      const idx = parseInt(e.target.value, 10);
+      if (!Number.isFinite(idx) || !PROGRESSIONS[idx]) return;
+      state.pending.progression = PROGRESSIONS[idx];
+      state.pending.rejitter = true;
+    });
+
     el.randKey.addEventListener('click', ()=>{
     if (state.keySource !== 'manual') return;
     let next; do { next = pickRandom(KEYS); } while (next === state.key && KEYS.length>1);
@@ -947,6 +1086,7 @@ function publishKey(k){
   function boot(){
     refreshKeySelect();
     refreshProgLabel();
+    refreshProgSelect();
     refreshLoopUI();
     refreshJitterUI();
     refreshPlacementUI();
