@@ -37,9 +37,10 @@ async function main($container) {
   };
 
   const availableStyles = [
+	'amen',
+	'plug2',
     'boom bap',
     'drill3',
-    'footwork2',
     'g funk',
     'house 3',
     'jerk',
@@ -57,7 +58,7 @@ async function main($container) {
     const state = global.get('state')
     const SSID = 'ISMM';
     const password = '12345678'
-    const playerURL = 'http://romainblasay.local:8000'
+    const playerURL = 'http://blase.local:8000'
     switch(state) {
       case 'init': {
         render(html`
@@ -84,7 +85,7 @@ async function main($container) {
                   <sc-text> </sc-text>
                 </div>
                 <div style="padding-bottom: 4px">
-                  <sc-text style="width: 400px; height: 60px; font-size: 22px;">${playerURL}</sc-text>
+                  <sc-text style="width: 600px; height: 60px; font-size: 22px;">${playerURL}</sc-text>
                 </div>
               </div>
               <sc-qrcode

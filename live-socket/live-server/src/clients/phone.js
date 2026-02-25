@@ -94,9 +94,10 @@ async function main($container) {
 
   // @todo: dynamically load filenames from folder (not hardcoded)
   const availableStyles = [
+	'amen',
+	'plug2',
     'boom bap',
     'drill3',
-    'footwork2',
     'g funk',
     'house 3',
     'jerk',

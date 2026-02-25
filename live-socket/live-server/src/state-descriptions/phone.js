@@ -3,7 +3,7 @@ export default {
     type: 'float',
     default: 80,
     min: 80,
-    max: 400,
+    max: 160,
   },
   keyVote: {
     type: 'any',
