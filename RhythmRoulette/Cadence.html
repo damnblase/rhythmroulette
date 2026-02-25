@@ -18,14 +18,24 @@
       </select>
     </div>
 
-    <div class="row minui-row">
-      <input id="bpm" class="rr-bpm" type="number" min="40" max="300" step="1" value="120" aria-label="BPM" />
+ <div class="row minui-row bpm-block">
+  <input id="bpm" class="rr-bpm" type="number" min="40" max="300" step="1" value="120" aria-label="BPM" />
+
+  <div class="bpm-buttons">
+    <div class="bpm-row">
       <button id="bpmMinus10" type="button">−10</button>
       <button id="bpmPlus10" type="button">+10</button>
-      <button id="bpmRand" class="rand-btn" type="button" title="Random BPM">⟳</button>
-      <span class="note" id="tickMsNote" style="display:none"></span>
     </div>
 
+    <div class="bpm-row">
+      <button id="bpmMinus1" type="button">−1</button>
+      <button id="bpmPlus1" type="button">+1</button>
+    </div>
+  </div>
+
+  <button id="bpmRand" class="rand-btn" type="button" title="Random BPM">⟳</button>
+  <span class="note" id="tickMsNote" style="display:none"></span>
+</div>
     <div class="row minui-row">
       <label for="swing">Swing</label>
       <input id="swing" type="range" min="0" max="100" step="1" value="0" />
@@ -78,6 +88,9 @@
   const lightsWrap = $('#lights');
   const modeSelect = $('#mode');
   const channelOut = $('#channelOut');
+  const bpmMinus1Btn = $('#bpmMinus1');
+  const bpmPlus1Btn  = $('#bpmPlus1');
+
 
   // Beat lights (4-group visualizer)
   const beatLights = [];
@@ -353,6 +366,13 @@ bpmInput.addEventListener('change', () => {
   
   if (bpmPlus10Btn) bpmPlus10Btn.addEventListener('click', () => {
     setBpmThroughInput(getBPM() + 10);
+  });
+  if (bpmMinus1Btn) bpmMinus1Btn.addEventListener('click', () => {
+  setBpmThroughInput(getBPM() - 1);
+  });
+
+  if (bpmPlus1Btn) bpmPlus1Btn.addEventListener('click', () => {
+    setBpmThroughInput(getBPM() + 1);
   });
   
   if (bpmRandBtn) bpmRandBtn.addEventListener('click', () => {

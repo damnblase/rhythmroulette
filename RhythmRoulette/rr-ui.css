@@ -62,6 +62,7 @@ html, body{
   background: var(--rr-bg) !important;
   color: var(--rr-fg) !important;
   font-family: var(--rr-font) !important;
+  font-size: 16px !important;
 }
 
 /* =========================================================
@@ -378,7 +379,11 @@ legend,
 
 strong{ font-weight: 700 !important; }
 
-select{ min-width: 140px; }
+select{
+  min-width: 140px !important;
+  min-height: 40px !important;
+  font-size : 18px !important;
+}
 select[data-rr-empty="1"]{ color: var(--rr-muted) !important; }
 
 .minui-frame{
@@ -445,6 +450,26 @@ select[data-rr-empty="1"]{ color: var(--rr-muted) !important; }
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1.2 !important;
+}
+.bpm-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bpm-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bpm-row {
+  display: flex;
+  gap: 8px;
+}
+
+.bpm-row button {
+  width: 60px;   /* garantit l’alignement parfait */
 }
 
 /* =========================================================
@@ -803,3 +828,5 @@ html[data-rr-theme="flat-light"] .rr-knob-circle{
   box-shadow: none !important;
 }
 html[data-rr-theme="flat-light"] .rr-knob-indicator{ background: var(--rr-accent) !important; }
+
+

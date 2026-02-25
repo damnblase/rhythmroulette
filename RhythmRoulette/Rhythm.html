@@ -858,7 +858,6 @@ function applyStyleFromServer(styleName) {
 
     console.log("Style reçu du serveur :", styleName);
 
-    // Cherche le preset correspondant par nom
     const index = presetLibrary.findIndex(p => 
         String(p.name).toLowerCase() === String(styleName).toLowerCase()
     );
@@ -867,32 +866,23 @@ function applyStyleFromServer(styleName) {
         console.warn("Preset non trouvé pour le style :", styleName);
         return;
     }
-/*
+
     const chosenPreset = presetLibrary[index].data;
 
-    // Appliquer les probabilités
+    // 1 Met à jour UNIQUEMENT les probabilités
     kickProbabilities  = chosenPreset.kick.slice();
     snareProbabilities = chosenPreset.snare.slice();
     hiHatProbabilities = chosenPreset.hihat.slice();
     tomProbabilities   = chosenPreset.hightom.slice();
     clapProbabilities  = chosenPreset.clap.slice();
 
-    // Update UI
+    // 2 Met à jour la table visuellement
     generateProbabilityTable();
-    generateDuplicatePatterns();
 
-    // Regénérer les patterns
-    randomizeInstrumentPattern("Kick");
-    randomizeInstrumentPattern("Snare");
-    randomizeInstrumentPattern("Hi-Hat");
-    randomizeInstrumentPattern("Percussion");
-    randomizeInstrumentPattern("Clap");
-*/
-    // Mettre à jour le dropdown visuellement
+    // 3 Met à jour le dropdown
     document.getElementById("presetSelect").selectedIndex = index;
 
-   // console.log("Preset appliqué automatiquement :", presetLibrary[index].name);
-
+    console.log("Probabilités mises à jour depuis le style :", presetLibrary[index].name);
 }
 ////////////////////
     /***** PER-INSTRUMENT BUTTONS *****/
