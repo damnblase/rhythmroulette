@@ -433,9 +433,7 @@ socket.addEventListener('message', (event) => {
   }
 
   if (data.type === 'randomize') {
-    randomizeChannel.postMessage({
-      type: 'randomize_all'
-    });
+    broadcastRandomizeAll('external_randomize');
     const v = 85 + Math.floor(Math.random() * (175 - 85 + 1)); // also randomize tempo
     setBpmThroughInput(v);
      console.log("new tempo "+v)
@@ -444,6 +442,13 @@ socket.addEventListener('message', (event) => {
 /////--- Randomize ALL Braodcast //////
    // Créer un BroadcastChannel pour communiquer avec les autres pages
     const randomizeChannel = new BroadcastChannel('randomize_channel');
+    function broadcastRandomizeAll(reason) {
+      randomizeChannel.postMessage({
+        type: 'randomize_all',
+        source: 'cadence',
+        reason
+      });
+    }
 
     // Écouteur pour le bouton Randomize All
     document.getElementById("randomizeAll").addEventListener("click", function() {
@@ -452,9 +457,7 @@ socket.addEventListener('message', (event) => {
         setBpmThroughInput(v);
      // }
       // Envoyer un message via le BroadcastChannel
-      randomizeChannel.postMessage({
-        type: 'randomize_all'
-      });
+      broadcastRandomizeAll('button_randomize_all_click');
       console.log("Message 'randomize_all' envoyé via BroadcastChannel.");
     });
 

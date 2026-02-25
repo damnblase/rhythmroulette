@@ -404,6 +404,12 @@
           segEls[i].style.backgroundColor = 'transparent';
         }
       }
+      let visualReloadPending = false;
+      function reloadVisualModule() {
+        if (visualReloadPending) return;
+        visualReloadPending = true;
+        window.location.reload();
+      }
 
       // ---------- External triggers ----------
       // 1) Existing direct command channel: "visualroulette-command" -> regenerate
@@ -423,6 +429,12 @@
         cadenceRandBC.onmessage = (ev) => {
           const d = ev.data;
           if (d && typeof d === 'object' && d.type === 'randomize_all') {
+            const isCadenceRandomAllClick =
+              d.source === 'cadence' && d.reason === 'button_randomize_all_click';
+            if (isCadenceRandomAllClick) {
+              reloadVisualModule();
+              return;
+            }
             fullVisualReset();
           }
         };
